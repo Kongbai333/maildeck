@@ -61,7 +61,8 @@ const NAV_ITEMS: NavItem[] = [
     path: ROUTES.mailbox,
     label: "我的邮箱",
     icon: <Mail size={18} aria-hidden="true" />,
-    roles: ["user"],
+    // 管理员同样拥有普通用户页面（自己的邮箱、在线播放），不必另开账号
+    roles: ["admin", "user"],
   },
   {
     path: ROUTES.onlinePlay,
