@@ -113,8 +113,12 @@ describe("folder display name mapping", () => {
       inboxFolderId: "inbox-id"
     });
 
-    const select = container.querySelector<HTMLSelectElement>(".folder-select");
-    const labels = [...select!.options].map((option) => option.textContent);
+    const trigger = container.querySelector<HTMLButtonElement>(".folder-select .app-select-trigger");
+    expect(trigger).not.toBeNull();
+    act(() => trigger!.click());
+    const labels = Array.from(document.body.querySelectorAll(".app-select-option")).map(
+      (option) => option.textContent?.replace(/\s+/g, "") ?? ""
+    );
     expect(labels).toEqual(["收件箱", "已发送", "垃圾邮件"]);
   });
 });

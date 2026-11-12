@@ -17,6 +17,18 @@ describe("parseAccountImport", () => {
     });
   });
 
+  it("parses tags from a CSV tags column and dashed tail", () => {
+    const [csvAccount] = parseAccountImport(
+      `email,client_id,refresh_token,remark,group,tags\nuser@example.com,${clientId},M.long-token,main,A,"vip,customer"`
+    );
+    expect(csvAccount.tags).toEqual(["vip", "customer"]);
+
+    const [dashedAccount] = parseAccountImport(
+      `user@example.com----${clientId}----M.long-token----main----A----vip|customer`
+    );
+    expect(dashedAccount.tags).toEqual(["vip", "customer"]);
+  });
+
   it("ignores the password field in the six-column dashed format", () => {
     const [account] = parseAccountImport(`user@example.com----password----${clientId}----M.long-token----main----A`);
     expect(account).toMatchObject({

@@ -144,7 +144,12 @@ export const MailReader = memo(function MailReader({
     setAttachments(null);
     setAttachmentError(null);
     setAttachmentsLoading(true);
-    void getDesktopApi()
+    const api = getDesktopApi();
+    if (!api) {
+      setAttachmentsLoading(false);
+      return;
+    }
+    void api
       .mail.listAttachments({
         accountId,
         messageId: freshMessageId,
@@ -178,7 +183,11 @@ export const MailReader = memo(function MailReader({
     setSavingId(attachmentId);
     setSaveNotice(null);
     try {
-      const result = await getDesktopApi().mail.saveAttachment({
+      const api = getDesktopApi();
+      if (!api) {
+        return;
+      }
+      const result = await api.mail.saveAttachment({
         accountId,
         messageId: freshMessageId,
         attachmentId,

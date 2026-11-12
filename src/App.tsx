@@ -10,8 +10,11 @@ import {
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { AccountSidebar } from "./components/AccountSidebar";
+import { AppMenuSidebar } from "./components/AppMenuSidebar";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { DomainMailboxView } from "./components/DomainMailboxView";
 import { ErrorBanner } from "./components/ErrorBanner";
+import { GroupCreateDialog } from "./components/GroupCreateDialog";
 import { ImportModal } from "./components/ImportModal";
 import { MailReader } from "./components/MailReader";
 import { MessageList } from "./components/MessageList";
@@ -31,6 +34,8 @@ import type {
   RefreshManyResult
 } from "./types";
 import { accountInboxSummary, formatRelativeTime, statusMeta } from "./ui-utils";
+import { mailboxCategoryOf, MAILBOX_CATEGORY_LABELS, type MailboxCategory } from "./mailbox-category";
+import { createAccountGroup, listAccountGroups, type AccountGroupView } from "./group-api";
 import { errorMessage } from "./app-error";
 import { useAccountCatalogSession } from "./use-account-catalog-session";
 import { useMailboxSession } from "./use-mailbox-session";
@@ -86,8 +91,10 @@ function EditAccountModal({
     clientId: account.clientId,
     refreshToken: "",
     remark: account.remark,
-    group: account.group
+    group: account.group,
+    tags: account.tags ?? []
   });
+  const [tagsText, setTagsText] = useState((account.tags ?? []).join(", "));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<AccountField>>({});
@@ -113,7 +120,11 @@ function EditAccountModal({
     setLoading(true);
 
     try {
-      const updated = await onSubmit(form);
+      const tags = tagsText
+        .split(/[,，;|]/u)
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+      const updated = await onSubmit({ ...form, tags });
       if (!updated) {
         return;
       }
@@ -214,6 +225,14 @@ function EditAccountModal({
           分组
           <input value={form.group} onChange={(event) => setForm({ ...form, group: event.target.value })} />
         </label>
+        <label className="span-2">
+          标签
+          <input
+            value={tagsText}
+            onChange={(event) => setTagsText(event.target.value)}
+            placeholder="多个标签用逗号分隔，例如：VIP, 客户A, 待跟进"
+          />
+        </label>
       </div>
       {error ? <div className="error-box">{error}</div> : null}
     </ModalShell>
@@ -236,6 +255,10 @@ export default function App() {
     [columnWidths.list]
   );
   const [statusFilter, setStatusFilter] = useState<"all" | "valid" | "invalid" | "untested">("all");
+  const [mailboxCategory, setMailboxCategory] = useState<MailboxCategory>("all");
+  const [groupFilter, setGroupFilter] = useState("");
+  const [serverGroups, setServerGroups] = useState<AccountGroupView[]>([]);
+  const [showGroupCreate, setShowGroupCreate] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<AccountView | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -361,12 +384,26 @@ export default function App() {
     [messages, selectedMessageId]
   );
 
+  const categoryAccounts = useMemo(
+    () => accounts.filter((account) => mailboxCategory === "all" || mailboxCategoryOf(account) === mailboxCategory),
+    [accounts, mailboxCategory]
+  );
+  const groupOptions = useMemo(() => {
+    const accountGroups = categoryAccounts.map((account) => account.group).filter(Boolean);
+    const serverGroupNames = serverGroups
+      .filter((group) => group.category === "all" || mailboxCategory === "all" || group.category === mailboxCategory)
+      .map((group) => group.name);
+    return [...new Set([...accountGroups, ...serverGroupNames])].sort();
+  }, [categoryAccounts, serverGroups, mailboxCategory]);
   const filteredAccounts = useMemo(() => {
     const query = accountQuery.trim().toLowerCase();
 
-    return accounts.filter((account) => {
+    return categoryAccounts.filter((account) => {
       const matchStatus = statusFilter === "all" || account.status === statusFilter;
       if (!matchStatus) {
+        return false;
+      }
+      if (groupFilter && account.group !== groupFilter) {
         return false;
       }
 
@@ -374,11 +411,11 @@ export default function App() {
         return true;
       }
 
-      return [account.email, account.remark, account.group, account.status].some((value) =>
-        value.toLowerCase().includes(query)
+      return [account.email, account.remark, account.group, account.status, ...(account.tags ?? [])].some(
+        (value) => value.toLowerCase().includes(query)
       );
     });
-  }, [accounts, accountQuery, statusFilter]);
+  }, [categoryAccounts, accountQuery, statusFilter, groupFilter]);
 
   const clearErrors = useCallback(() => {
     setErrorState({ message: "", code: null });
@@ -706,6 +743,27 @@ export default function App() {
     );
   }, [filteredAccounts, refreshAccounts]);
 
+  const selectMailboxCategory = useCallback((category: MailboxCategory) => {
+    setMailboxCategory(category);
+    setGroupFilter("");
+    setStatusFilter("all");
+    mailbox.selectAccount(null);
+  }, [mailbox]);
+
+  const createGroup = useCallback(async (name: string) => {
+    const groups = await createAccountGroup(name, mailboxCategory);
+    setServerGroups(groups);
+    setToast(`已创建分组 ${name}`);
+  }, [mailboxCategory]);
+
+  const openGroupCreate = useCallback(() => setShowGroupCreate(true), []);
+  const testAccountById = useCallback(
+    (accountId: string) => {
+      void testConnection(accountId);
+    },
+    [testConnection]
+  );
+
   const selectAccount = useCallback(
     (accountId: string) => {
       const account = accounts.find((item) => item.id === accountId);
@@ -775,9 +833,10 @@ export default function App() {
     void mailbox.loadMore();
   }, [clearErrors, mailbox]);
 
-  const requestDeleteAccount = useCallback(() => {
-    if (selectedAccount) {
-      setDeleteTarget(selectedAccount);
+  const requestDeleteAccount = useCallback((account?: AccountView) => {
+    const target = account ?? selectedAccount;
+    if (target) {
+      setDeleteTarget(target);
     }
   }, [selectedAccount]);
 
@@ -813,6 +872,7 @@ export default function App() {
     // 初始化只应执行一次，不随 session 门面函数身份变化重跑。
     void loadAccounts(false);
     void loadSettings();
+    void listAccountGroups().then(setServerGroups).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only initialization
   }, []);
 
@@ -933,7 +993,17 @@ export default function App() {
   }, [testMenuOpen]);
 
   return (
-    <div className={`mail-app${columnsResizing ? " is-resizing-columns" : ""}`}>
+    <div className="four-column-app">
+      <AppMenuSidebar
+        accounts={accounts}
+        activeCategory={mailboxCategory}
+        onSelectCategory={selectMailboxCategory}
+        onOpenSettings={openSettingsModal}
+      />
+      <div className={`mail-app${columnsResizing ? " is-resizing-columns" : ""}`}>
+      {mailboxCategory === "temp" ? (
+        <DomainMailboxView />
+      ) : (
       <div className="mail-shell" style={shellStyle}>
         <div
           className="column-resizer column-resizer-sidebar"
@@ -951,14 +1021,20 @@ export default function App() {
           }}
         />
         <AccountSidebar
-          accounts={accounts}
+          accounts={categoryAccounts}
           filteredAccounts={filteredAccounts}
+          showBrand={false}
+          showSettingsButton={false}
           selectedAccountId={selectedAccountId}
           loadingAccounts={loadingAccounts}
           accountQuery={accountQuery}
           statusFilter={statusFilter}
+          groupFilter={groupFilter}
+          groupOptions={groupOptions}
           onAccountQueryChange={setAccountQuery}
           onStatusFilterChange={setStatusFilter}
+          onGroupFilterChange={setGroupFilter}
+          onCreateGroup={openGroupCreate}
           onSelectAccount={selectAccount}
           onOpenImport={openImportModal}
           onImportFromFile={importFromFile}
@@ -968,6 +1044,10 @@ export default function App() {
           busyAccountIds={busyAccountIdSet}
           refreshDisabled={singleRefreshBlocked}
           onRefreshAccount={refreshSingleAccount}
+          onTestAccount={testAccountById}
+          onEditAccount={setEditingAccount}
+          onDeleteAccount={requestDeleteAccount}
+          onToast={setToast}
           selectedAccountError={mailboxError || undefined}
         />
 
@@ -1150,6 +1230,15 @@ export default function App() {
           </div>
         </main>
       </div>
+      )}
+
+      {showGroupCreate ? (
+        <GroupCreateDialog
+          categoryLabel={mailboxCategory === "all" ? "全部邮箱" : MAILBOX_CATEGORY_LABELS[mailboxCategory]}
+          onClose={() => setShowGroupCreate(false)}
+          onCreate={createGroup}
+        />
+      ) : null}
 
       {showImportModal ? (
         <ImportModal
@@ -1223,6 +1312,7 @@ export default function App() {
           </button>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

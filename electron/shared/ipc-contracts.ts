@@ -98,6 +98,8 @@ export interface AccountInput {
   refreshToken: string;
   remark?: string;
   group?: string;
+  /** 账号标签，和分组分开维护；同一标签可挂在多个账号上。 */
+  tags?: string[];
 }
 
 export interface AccountUpdateInput {
@@ -107,6 +109,7 @@ export interface AccountUpdateInput {
   refreshToken?: string;
   remark?: string;
   group?: string;
+  tags?: string[];
 }
 
 export interface AccountView {
@@ -115,6 +118,7 @@ export interface AccountView {
   clientId: string;
   remark: string;
   group: string;
+  tags?: string[];
   authMode?: "graph" | "imap";
   status: AccountStatus;
   lastCheckedAt: string | null;
@@ -522,13 +526,16 @@ export const IPC_EVENT_SCHEMAS = {
   [IPC_EVENT_CHANNELS.updateState]: updateStateEventSchema
 } as const;
 
+const tagSchema = z.string().trim().min(1).max(50);
+
 const accountInputSchema = z.strictObject({
   // 先 trim 再验格式：Zod 4 按注册顺序校验，z.email().trim() 会拒绝带首尾空格的合法邮箱。
   email: z.string().trim().max(320).pipe(z.email()),
   clientId: z.string().trim().min(1).max(256),
   refreshToken: z.string().trim().min(1).max(32_768),
   remark: shortOptionalTextSchema,
-  group: z.string().trim().max(200).optional()
+  group: z.string().trim().max(200).optional(),
+  tags: z.array(tagSchema).max(20).optional()
 });
 
 const accountUpdateInputSchema = z.strictObject({
@@ -537,7 +544,8 @@ const accountUpdateInputSchema = z.strictObject({
   clientId: z.string().trim().min(1).max(256),
   refreshToken: z.string().trim().max(32_768).optional(),
   remark: shortOptionalTextSchema,
-  group: z.string().trim().max(200).optional()
+  group: z.string().trim().max(200).optional(),
+  tags: z.array(tagSchema).max(20).optional()
 });
 
 const accountBatchSchema = z

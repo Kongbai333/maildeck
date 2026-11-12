@@ -9,9 +9,17 @@ export default tseslint.config(
       "build/**",
       "coverage/**",
       "dist/**",
+      "dist-tauri/**",
       "dist-electron/**",
+      "dist-server/**",
       "node_modules/**",
-      "release/**"
+      "release/**",
+      "src-tauri/gen/**",
+      "src-tauri/resources/**",
+      "src-tauri/target/**",
+      "webapp/dist/**",
+      "data/**",
+      "data-smoke/**"
     ]
   },
 
@@ -60,7 +68,7 @@ export default tseslint.config(
   },
 
   {
-    files: ["src/**/*.{ts,tsx}"],
+    files: ["src/**/*.{ts,tsx}", "webapp/src/**/*.{ts,tsx}"],
     plugins: { "react-hooks": reactHooks },
     // eslint-plugin-react-hooks@6 的 flat `configs.recommended` 是数组（元素内含
     // plugins + rules），直接展开 `.rules` 会得到 undefined，导致 hooks 规则实际未启用。
@@ -89,7 +97,7 @@ export default tseslint.config(
   },
 
   {
-    files: ["**/*.{js,mjs,cjs}", "*.config.ts", "scripts/**"],
+    files: ["**/*.{js,mjs,cjs}", "*.config.ts", "webapp/vite.config.ts", "scripts/**"],
     extends: [tseslint.configs.disableTypeChecked]
   }
 );

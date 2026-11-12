@@ -1,6 +1,7 @@
 import { Loader2, Settings } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { getDesktopApi } from "../desktop-api";
+import { clearConnectionConfig, getCurrentConnectionConfig } from "../connection-config";
 import { errorMessage } from "../app-error";
 import { APP_VERSION } from "../app-version";
 import { validateNumberField } from "../form-validation";
@@ -9,6 +10,7 @@ import { formatBytes } from "../ui-utils";
 import { useAppUpdater } from "../use-app-updater";
 import type { AppSettings, AppSettingsUpdate, MailCacheStats, UpdateStateEvent } from "../types";
 import { ModalShell } from "./ModalShell";
+import { AppSelect } from "./AppSelect";
 
 type SettingsField = "batchConcurrency" | "autoRefreshIntervalMinutes";
 
@@ -73,6 +75,7 @@ export function SettingsModal({
   const [clearingCache, setClearingCache] = useState(false);
   const [cacheMessage, setCacheMessage] = useState("");
   const updater = useAppUpdater();
+  const connectionConfig = getCurrentConnectionConfig();
 
   // 缓存开关只控制“以后还缓不缓存”，已经落盘的数据得让用户看得见、能清掉（P6）。
   useEffect(() => {
@@ -376,16 +379,18 @@ export function SettingsModal({
           </label>
           <label>
             刷新范围
-            <select
+            <AppSelect
               value={form.refreshScope}
               disabled={!form.autoRefreshEnabled}
-              onChange={(event) =>
-                setForm({ ...form, refreshScope: event.target.value === "recent" ? "recent" : "all" })
+              ariaLabel="刷新范围"
+              onChange={(value) =>
+                setForm({ ...form, refreshScope: value === "recent" ? "recent" : "all" })
               }
-            >
-              <option value="all">全部可用账号</option>
-              <option value="recent">最近 7 天收到过邮件的账号</option>
-            </select>
+              options={[
+                { value: "all", label: "全部可用账号" },
+                { value: "recent", label: "最近 7 天收到过邮件的账号" }
+              ]}
+            />
           </label>
         </div>
       </section>
@@ -419,6 +424,24 @@ export function SettingsModal({
         <div className="error-box">当前代理协议不受支持，请改为 HTTP/HTTPS 或清空代理地址。</div>
       ) : null}
       {error ? <div className="error-box">{error}</div> : null}
+      {connectionConfig ? (
+        <section className="settings-section">
+          <h3>服务器连接</h3>
+          <p className="field-hint">当前服务端：{connectionConfig.serverUrl}</p>
+          <div className="settings-grid">
+            <button
+              type="button"
+              className="secondary-button dark-button"
+              onClick={() => {
+                clearConnectionConfig();
+                window.location.reload();
+              }}
+            >
+              重新配置服务器
+            </button>
+          </div>
+        </section>
+      ) : null}
       <section className="settings-section">
         <h3>应用更新</h3>
         {updater.supported ? (

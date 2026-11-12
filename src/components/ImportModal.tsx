@@ -158,8 +158,8 @@ export function ImportModal({
     >
       <div className="import-format-help">
         <strong>直接粘贴多行即可；要从文件导入，请用侧栏的「导入文件」按钮上传 .txt / .csv。</strong>
-        <span>CSV: email,client_id,refresh_token,remark,group</span>
-        <span>短横线: email----client_id----refresh_token----remark----group</span>
+        <span>CSV: email,client_id,refresh_token,remark,group,tags</span>
+        <span>短横线: email----client_id----refresh_token----remark----group----tags</span>
         <span>带密码: email----password----client_id----refresh_token----remark----group</span>
       </div>
 

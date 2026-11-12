@@ -1,0 +1,22 @@
+services:
+  maildeck:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    ports:
+      - "8787:8787"
+    environment:
+      MAILDECK_HOST: 0.0.0.0
+      MAILDECK_PORT: 8787
+      MAILDECK_DATA_DIR: /data
+      # 生产环境必须替换为 32 字节 base64 主密钥，且不要把 key 提交进仓库。
+      MAILDECK_MASTER_KEY: ${MAILDECK_MASTER_KEY:?请在 .env 中设置 MAILDECK_MASTER_KEY}
+      MAILDECK_API_TOKEN: ${MAILDECK_API_TOKEN:-}
+      MAILDECK_ADMIN_PASSWORD: ${MAILDECK_ADMIN_PASSWORD:-}
+      MAILDECK_CORS_ORIGINS: ${MAILDECK_CORS_ORIGINS:-http://localhost:5174}
+    volumes:
+      - maildeck-data:/data
+    restart: unless-stopped
+
+volumes:
+  maildeck-data:

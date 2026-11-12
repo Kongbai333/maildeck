@@ -1,5 +1,4 @@
 import { app, BrowserWindow, dialog, Menu, session } from "electron";
-import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { closeDatabase, getDatabase } from "./database.js";
@@ -21,7 +20,6 @@ import {
 } from "./tray-controller.js";
 import { SECURE_WEB_PREFERENCES } from "./window-security.js";
 import { configureSessionPermissions } from "./session-security.js";
-import { migrateLegacyUserDataDirectory, readUserDataOverride } from "./user-data-path.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,22 +27,21 @@ const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
 let fatalExitStarted = false;
 
+// 云端版使用独立的应用名和 userData 目录，避免和已安装的 MailDeck 共用
+// single-instance lock；否则启动云版时会把焦点切回旧版窗口。
+const CLOUD_APP_NAME = "MailDeck Cloud";
+app.setName(CLOUD_APP_NAME);
+
 // userData 目录必须在申请单实例锁之前确定：锁的身份取自调用时刻的 userData 路径。
 // 同一 userData 目录下不允许第二个进程（node:sqlite 不支持多进程并发写入，双开会触发
 // database is locked 甚至互相覆盖账号状态）；不同数据目录（如发布冒烟测试的隔离目录）
 // 互不影响。第二个实例直接退出。
-const userDataOverride = readUserDataOverride(process.env);
+const userDataOverride = process.env.MAILDECK_USER_DATA_DIR?.trim() || null;
 if (userDataOverride) {
   app.setPath("userData", userDataOverride);
 } else {
-  const migratedPath = migrateLegacyUserDataDirectory({
-    defaultPath: app.getPath("userData"),
-    fs: { existsSync, renameSync },
-    onError: (error) => console.error("Failed to migrate legacy userData directory", formatErrorForLog(error))
-  });
-  if (migratedPath) {
-    app.setPath("userData", migratedPath);
-  }
+  // 明确使用独立目录，避免和原版 MailDeck / Outlook Manager 的 userData 冲突。
+  app.setPath("userData", path.join(app.getPath("appData"), CLOUD_APP_NAME));
 }
 
 // 开启 RendererCodeIntegrity：阻止第三方 DLL（搜狗输入法 SogouPY.ime、Mactype 等）注入渲染进程。
@@ -106,7 +103,7 @@ function createWindow() {
     height: 800,
     minWidth: 960,
     minHeight: 600,
-    title: "MailDeck",
+    title: "MailDeck Cloud",
     icon: path.join(__dirname, "../../build/icon.ico"),
     backgroundColor: "#fafafa", // 与 --bg-app 一致：窗口映射到首帧之间不留异色
     webPreferences: {

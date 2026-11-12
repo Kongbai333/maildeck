@@ -1,7 +1,8 @@
-import { AlertCircle, ClipboardList, Inbox, Loader2, Paperclip, Plus, RefreshCw, Search, X } from "lucide-react";
+import { AlertCircle, ClipboardList, Copy, Inbox, Loader2, Paperclip, Plus, RefreshCw, Search, X } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { splitErrorMessage } from "../error-display";
 import { ErrorDetailCopy } from "./ErrorDetailCopy";
+import { AppSelect } from "./AppSelect";
 import { resolveFixedVirtualWindow } from "../fixed-virtual-window";
 import { resolveMailListFooter } from "../mail-pagination";
 import type { MailFolder, MailMessageSummary } from "../types";
@@ -131,7 +132,37 @@ export const MessageList = memo(function MessageList({
   });
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(DEFAULT_VIEWPORT_HEIGHT);
+  const [contextMenu, setContextMenu] = useState<{ message: MailMessageSummary; x: number; y: number } | null>(null);
   const previousListKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+    const close = () => setContextMenu(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("blur", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextMenu]);
+
+  async function copyMessageValue(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // Clipboard can be unavailable in some embedded browsers; the menu still closes.
+    }
+    setContextMenu(null);
+  }
   const virtualWindow = resolveFixedVirtualWindow({
     itemCount: messages.length,
     itemHeight: MESSAGE_ROW_HEIGHT,
@@ -192,21 +223,18 @@ export const MessageList = memo(function MessageList({
         <div className="folder-title">
           <Inbox size={16} />
           {showFolderPicker ? (
-            <select
+            <AppSelect
               className="folder-select"
               value={selectedFolderId ?? ""}
-              onChange={(event) => onSelectFolder(event.target.value || null)}
-            >
-              <option value="">{folderDisplayLabel(inboxFolder?.displayName ?? "收件箱")}</option>
-              {folders
-                .filter((folder) => folder.id !== (selectedFolderId ?? ""))
-                .filter((folder) => folder.id !== inboxFolder?.id)
-                .map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folderDisplayLabel(folder.displayName)}
-                  </option>
-                ))}
-            </select>
+              onChange={(value) => onSelectFolder(value || null)}
+              ariaLabel="选择文件夹"
+              options={[
+                { value: "", label: folderDisplayLabel(inboxFolder?.displayName ?? "收件箱") },
+                ...folders
+                  .filter((folder) => folder.id !== inboxFolder?.id)
+                  .map((folder) => ({ value: folder.id, label: folderDisplayLabel(folder.displayName) }))
+              ]}
+            />
           ) : (
             <span>收件箱</span>
           )}
@@ -322,6 +350,11 @@ export const MessageList = memo(function MessageList({
                   data-message-index={virtualWindow.startIndex + index}
                   disabled={loadingMessages}
                   onClick={() => onSelectMessage(message.id)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setContextMenu({ message, x: event.clientX, y: event.clientY });
+                  }}
                 >
                   <div className="message-row-top">
                     <strong>{senderLabel(message)}</strong>
@@ -360,6 +393,44 @@ export const MessageList = memo(function MessageList({
           <p className="message-list-count is-footer">{listFooter.countText}</p>
         ) : null}
       </div>
+
+      {contextMenu ? (
+        <div
+          className="account-context-menu message-context-menu"
+          role="menu"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 230),
+            top: Math.min(contextMenu.y, window.innerHeight - 250)
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="context-menu-label">{contextMenu.message.subject}</div>
+          <button type="button" role="menuitem" onClick={() => {
+            setContextMenu(null);
+            onSelectMessage(contextMenu.message.id);
+          }}>
+            <Search size={14} /> 打开邮件
+          </button>
+          <button type="button" role="menuitem" onClick={() => void copyMessageValue(contextMenu.message.subject)}>
+            <Copy size={14} /> 复制主题
+          </button>
+          <button type="button" role="menuitem" onClick={() => void copyMessageValue(senderLabel(contextMenu.message))}>
+            <Copy size={14} /> 复制发件人
+          </button>
+          {contextMenu.message.from?.address ? (
+            <button type="button" role="menuitem" onClick={() => void copyMessageValue(contextMenu.message.from!.address)}>
+              <Copy size={14} /> 复制发件地址
+            </button>
+          ) : null}
+          <div className="context-menu-divider" />
+          <button type="button" role="menuitem" onClick={() => {
+            setContextMenu(null);
+            onRefresh();
+          }}>
+            <RefreshCw size={14} /> 刷新邮件列表
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 });

@@ -1,8 +1,12 @@
 node_modules
 dist
+dist-tauri
 dist-electron
+dist-server
 release
+data
 *.log
+.dev-web-screenshot.png
 token-debug*.json
 token-debug*.txt
 *.db
@@ -14,3 +18,16 @@ settings.json*
 .DS_Store
 *.tsbuildinfo
 tmp-*user-data/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/resources/
+webapp/.shots/
+
+# ── 本地/部署密钥与运行数据（切勿提交）──
+.env
+.env.local
+.env.*.local
+*.log.err
+server-restart*
+# 文档截图可能含真实账号信息，不入库
+docs/screenshots/

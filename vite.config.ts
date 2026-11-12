@@ -26,9 +26,17 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     port: 5173,
-    strictPort: false
+    strictPort: false,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8787",
+        changeOrigin: true
+      }
+    }
   },
   build: {
-    outDir: "dist"
+    outDir: "dist",
+    // 每次构建清空旧 hash 产物：否则 dist/assets 会堆积历史 bundle 并被桌面包全量打进去。
+    emptyOutDir: true
   }
 });

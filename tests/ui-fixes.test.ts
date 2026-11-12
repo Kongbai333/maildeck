@@ -113,26 +113,36 @@ function listProps(overrides: Partial<ComponentProps<typeof MessageList>> = {}) 
 }
 
 describe("账号侧栏的状态与引导", () => {
-  it("shows each status count on the filter segments", () => {
+  it("shows group tabs with counts and a create-group entry instead of status segments", () => {
+    const onCreateGroup = vi.fn();
     const element = render(
       createElement(
         AccountSidebar,
-        sidebarProps([
-          account({ id: "a", email: "a@x.com", status: "valid" }),
-          account({ id: "b", email: "b@x.com", status: "invalid" }),
-          account({ id: "c", email: "c@x.com", status: "untested" })
-        ])
+        sidebarProps(
+          [
+            account({ id: "a", email: "a@x.com", group: "Work" }),
+            account({ id: "b", email: "b@x.com", group: "Work" }),
+            account({ id: "c", email: "c@x.com", group: "Personal" })
+          ],
+          { groupOptions: ["Work", "Personal"], groupFilter: "", onCreateGroup }
+        )
       )
     );
 
-    const segments = Array.from(element.querySelectorAll(".segmented button")).map((node) =>
+    const tabs = Array.from(element.querySelectorAll(".sidebar-group-tab")).map((node) =>
       node.textContent?.replace(/\s+/g, "")
     );
 
-    expect(segments).toContain("全部3");
-    expect(segments).toContain("可用1");
-    expect(segments).toContain("失效1");
-    expect(segments).toContain("未测1");
+    expect(tabs).toContain("全部3");
+    expect(tabs).toContain("Work2");
+    expect(tabs).toContain("Personal1");
+    // 状态筛选段已按需求移除，只保留分组标签页。
+    expect(element.querySelector(".segmented")).toBeNull();
+
+    const addButton = element.querySelector<HTMLButtonElement>(".sidebar-group-add");
+    expect(addButton).not.toBeNull();
+    act(() => addButton!.click());
+    expect(onCreateGroup).toHaveBeenCalledTimes(1);
   });
 
   it("offers the import call-to-action when no account exists", () => {

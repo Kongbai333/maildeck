@@ -1,8 +1,9 @@
-import { FileUp, Inbox, Loader2, Mail, Plus, RefreshCw, Search, Settings, X } from "lucide-react";
-import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, Copy, FileUp, Inbox, Loader2, Mail, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Settings, Tag, Trash2, X } from "lucide-react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { splitErrorMessage } from "../error-display";
 import { resolveFixedVirtualWindow } from "../fixed-virtual-window";
 import type { AccountView } from "../types";
+import { tagTone } from "../tag-colors";
 import { accountMailStats, statusMeta } from "../ui-utils";
 import { TokenGuidePanel } from "./TokenGuidePanel";
 
@@ -16,17 +17,27 @@ export const AccountSidebar = memo(function AccountSidebar({
   loadingAccounts,
   accountQuery,
   statusFilter,
+  groupFilter = "",
+  groupOptions = [],
   onAccountQueryChange,
   onStatusFilterChange,
+  onGroupFilterChange = () => undefined,
+  onCreateGroup,
   onSelectAccount,
   onOpenImport,
   onImportFromFile,
   onReloadAccounts,
   onOpenSettings,
+  showBrand = true,
+  showSettingsButton = true,
   newMailCounts,
   busyAccountIds,
   refreshDisabled = false,
   onRefreshAccount,
+  onTestAccount,
+  onEditAccount,
+  onDeleteAccount,
+  onToast,
   selectedAccountError
 }: {
   accounts: readonly AccountView[];
@@ -35,23 +46,64 @@ export const AccountSidebar = memo(function AccountSidebar({
   loadingAccounts: boolean;
   accountQuery: string;
   statusFilter: "all" | "valid" | "invalid" | "untested";
+  groupFilter?: string;
+  groupOptions?: readonly string[];
   onAccountQueryChange: (value: string) => void;
   onStatusFilterChange: (value: "all" | "valid" | "invalid" | "untested") => void;
+  onGroupFilterChange?: (value: string) => void;
+  onCreateGroup?: () => void;
   onSelectAccount: (accountId: string) => void;
   onOpenImport: () => void;
   onImportFromFile: () => void;
   onReloadAccounts: () => void;
   onOpenSettings: () => void;
+  showBrand?: boolean;
+  showSettingsButton?: boolean;
   newMailCounts?: Record<string, number>;
   busyAccountIds?: ReadonlySet<string>;
   refreshDisabled?: boolean;
   onRefreshAccount: (accountId: string) => void;
+  onTestAccount?: (accountId: string) => void;
+  onEditAccount?: (account: AccountView) => void;
+  onDeleteAccount?: (account: AccountView) => void;
+  onToast?: (message: string) => void;
   /** 当前选中账号读邮件失败时的原因：侧栏不能一边显示 ✓ 可用一边读不出邮件。 */
   selectedAccountError?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
+  const [contextMenu, setContextMenu] = useState<{ account: AccountView; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+    const close = () => setContextMenu(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("blur", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextMenu]);
+
+  async function copyContextValue(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      onToast?.(`${label}已复制`);
+    } catch {
+      onToast?.(`复制${label}失败`);
+    }
+    setContextMenu(null);
+  }
 
   // Ctrl+F / Cmd+F 把焦点导到侧栏搜索框，替代浏览器默认查找。放本组件内
   // 而不是 App，是为了让搜索框与其焦点行为内聚、可独立测试。
@@ -81,14 +133,17 @@ export const AccountSidebar = memo(function AccountSidebar({
     () => filteredAccounts.slice(virtualWindow.startIndex, virtualWindow.endIndex),
     [filteredAccounts, virtualWindow.startIndex, virtualWindow.endIndex]
   );
-  // 筛选标签上带数量：否则“失效”一点进去变空列表，用户不知道是没结果还是没数据。
-  const statusCounts = useMemo(() => {
-    const counts = { all: accounts.length, valid: 0, invalid: 0, untested: 0 };
+  const groupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
     for (const account of accounts) {
-      counts[account.status] += 1;
+      if (account.group) {
+        counts.set(account.group, (counts.get(account.group) ?? 0) + 1);
+      }
     }
     return counts;
   }, [accounts]);
+
+  const hasAccounts = accounts.length > 0;
 
   useLayoutEffect(() => {
     const scrollArea = scrollRef.current;
@@ -127,19 +182,21 @@ export const AccountSidebar = memo(function AccountSidebar({
       scrollArea.scrollTop = 0;
     }
     setScrollTop(0);
-  }, [accountQuery, statusFilter]);
+  }, [accountQuery, statusFilter, groupFilter]);
 
   return (
     <aside className="sidebar">
-      <div className="brand-block">
-        <div className="brand-icon">
-          <Mail size={26} />
+      {showBrand ? (
+        <div className="brand-block">
+          <div className="brand-icon">
+            <Mail size={26} />
+          </div>
+          <div>
+            <h1>MailDeck</h1>
+            <p>本地优先的邮箱工作台</p>
+          </div>
         </div>
-        <div>
-          <h1>MailDeck</h1>
-          <p>本地优先的邮箱工作台</p>
-        </div>
-      </div>
+      ) : null}
 
       <div className="sidebar-actions">
         <button className="import-button" onClick={onOpenImport}>
@@ -158,9 +215,11 @@ export const AccountSidebar = memo(function AccountSidebar({
         >
           <RefreshCw size={16} />
         </button>
-        <button className="square-button" onClick={onOpenSettings} title="设置" aria-label="打开设置">
-          <Settings size={16} />
-        </button>
+        {showSettingsButton ? (
+          <button className="square-button" onClick={onOpenSettings} title="设置" aria-label="打开设置">
+            <Settings size={16} />
+          </button>
+        ) : null}
       </div>
 
       <div className="sidebar-search">
@@ -191,30 +250,44 @@ export const AccountSidebar = memo(function AccountSidebar({
         ) : null}
       </div>
 
-      <div className="sidebar-stats" role="status" aria-live="polite">
-        <span>
-          {filteredAccounts.length} / {accounts.length} 个邮箱
-        </span>
-      </div>
-
-      <div className="segmented slim-segmented">
-        <button type="button" className={statusFilter === "all" ? "active" : ""} onClick={() => onStatusFilterChange("all")}>
-          全部 <span className="segment-count">{statusCounts.all}</span>
-        </button>
-        <button type="button" className={statusFilter === "valid" ? "active" : ""} onClick={() => onStatusFilterChange("valid")}>
-          可用 <span className="segment-count">{statusCounts.valid}</span>
-        </button>
-        <button type="button" className={statusFilter === "invalid" ? "active" : ""} onClick={() => onStatusFilterChange("invalid")}>
-          失效 <span className="segment-count">{statusCounts.invalid}</span>
-        </button>
-        <button type="button" className={statusFilter === "untested" ? "active" : ""} onClick={() => onStatusFilterChange("untested")}>
-          未测 <span className="segment-count">{statusCounts.untested}</span>
-        </button>
+      <div className="sidebar-group-tabs-wrap">
+        <div className="sidebar-group-tabs" role="tablist" aria-label="邮箱分组">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!groupFilter}
+            className={`sidebar-group-tab ${!groupFilter ? "active" : ""}`}
+            onClick={() => onGroupFilterChange("")}
+          >
+            全部 <em>{accounts.length}</em>
+          </button>
+          {groupOptions.map((group) => (
+            <button
+              type="button"
+              role="tab"
+              key={group}
+              aria-selected={groupFilter === group}
+              className={`sidebar-group-tab ${groupFilter === group ? "active" : ""}`}
+              onClick={() => onGroupFilterChange(group)}
+            >
+              {group} <em>{groupCounts.get(group) ?? 0}</em>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="sidebar-group-add"
+            title="新建分组"
+            aria-label="新建分组"
+            onClick={onCreateGroup}
+          >
+            <Plus size={13} />
+          </button>
+        </div>
       </div>
 
       <div
         ref={scrollRef}
-        className="account-scroll"
+        className={`account-scroll ${!loadingAccounts && !hasAccounts ? "account-scroll-empty" : ""}`}
         aria-busy={loadingAccounts}
         aria-label="邮箱账号"
         role="region"
@@ -250,6 +323,7 @@ export const AccountSidebar = memo(function AccountSidebar({
                   onClick={() => {
                     onAccountQueryChange("");
                     onStatusFilterChange("all");
+                    onGroupFilterChange("");
                   }}
                 >
                   清除筛选
@@ -278,6 +352,11 @@ export const AccountSidebar = memo(function AccountSidebar({
                     tabIndex={0}
                     title={`${account.email}${account.remark ? ` · ${account.remark}` : ""}`}
                     onClick={() => onSelectAccount(account.id)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setContextMenu({ account, x: event.clientX, y: event.clientY });
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
@@ -288,7 +367,7 @@ export const AccountSidebar = memo(function AccountSidebar({
                     <div className="account-text">
                       <strong>{account.email}</strong>
                       <div className="account-meta-row">
-                        <span className="account-remark">{account.remark || account.group}</span>
+                        {account.remark ? <span className="account-remark">{account.remark}</span> : null}
                         <span className={`account-stats ${account.status === "invalid" && !account.lastRefreshedAt ? "account-stats-failed" : ""}`}>
                           {accountMailStats(account)}
                         </span>
@@ -298,9 +377,33 @@ export const AccountSidebar = memo(function AccountSidebar({
                           </span>
                         ) : null}
                       </div>
+                      {account.group || (account.tags?.length ?? 0) > 0 ? (
+                        <div className="account-tag-row">
+                          {account.group ? <span className="account-group-chip">{account.group}</span> : null}
+                          {(account.tags ?? []).slice(0, 2).map((tag) => (
+                            <span className={`account-tag-chip tag-tone-${tagTone(tag)}`} key={tag}>{tag}</span>
+                          ))}
+                          {(account.tags?.length ?? 0) > 2 ? (
+                            <span className="account-tag-more">+{(account.tags?.length ?? 0) - 2}</span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="account-badges">
                       {newCount > 0 ? <span className="new-mail-chip">+{newCount}</span> : null}
+                      <button
+                        type="button"
+                        className="account-more-button"
+                        title="更多操作"
+                        aria-label={`${account.email} 的更多操作`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setContextMenu({ account, x: rect.right - 4, y: rect.bottom + 4 });
+                        }}
+                      >
+                        <MoreHorizontal size={15} />
+                      </button>
                       <button
                         type="button"
                         className={`${meta.className} account-refresh-status`}
@@ -330,6 +433,65 @@ export const AccountSidebar = memo(function AccountSidebar({
           </div>
         ) : null}
       </div>
+
+      {contextMenu ? (
+        <div
+          className="account-context-menu"
+          role="menu"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 230),
+            top: Math.min(contextMenu.y, window.innerHeight - 340)
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="context-menu-label">{contextMenu.account.email}</div>
+          <button type="button" role="menuitem" onClick={() => {
+            setContextMenu(null);
+            onSelectAccount(contextMenu.account.id);
+          }}>
+            <Mail size={14} /> 打开邮箱
+          </button>
+          <button type="button" role="menuitem" onClick={() => {
+            setContextMenu(null);
+            onTestAccount?.(contextMenu.account.id);
+          }}>
+            <CheckCircle2 size={14} /> 测试连接
+          </button>
+          <button type="button" role="menuitem" onClick={() => {
+            setContextMenu(null);
+            onRefreshAccount(contextMenu.account.id);
+          }}>
+            <RefreshCw size={14} /> 刷新邮件
+          </button>
+          <button type="button" role="menuitem" onClick={() => {
+            setContextMenu(null);
+            onEditAccount?.(contextMenu.account);
+          }}>
+            <Pencil size={14} /> 编辑账号
+          </button>
+          <div className="context-menu-divider" />
+          <button type="button" role="menuitem" onClick={() => void copyContextValue(contextMenu.account.email, "邮箱地址")}>
+            <Copy size={14} /> 复制邮箱地址
+          </button>
+          {contextMenu.account.group ? (
+            <button type="button" role="menuitem" onClick={() => void copyContextValue(contextMenu.account.group, "分组")}>
+              <Tag size={14} /> 复制分组
+            </button>
+          ) : null}
+          {(contextMenu.account.tags?.length ?? 0) > 0 ? (
+            <button type="button" role="menuitem" onClick={() => void copyContextValue((contextMenu.account.tags ?? []).join(", "), "标签")}>
+              <Tag size={14} /> 复制标签
+            </button>
+          ) : null}
+          <div className="context-menu-divider" />
+          <button type="button" role="menuitem" className="context-menu-danger" onClick={() => {
+            setContextMenu(null);
+            onDeleteAccount?.(contextMenu.account);
+          }}>
+            <Trash2 size={14} /> 删除账号
+          </button>
+        </div>
+      ) : null}
     </aside>
   );
 });

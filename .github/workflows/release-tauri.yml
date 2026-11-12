@@ -1,0 +1,37 @@
+name: Release · Tauri 2 Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      # Electron 的 postinstall 会下载 Chromium，Tauri 构建不需要。
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck:renderer
+      - run: npm test
+      - run: npm run build:tauri:server
+      - run: npm run build:tauri:web
+      - run: npm run prepare:tauri
+      - run: npx tauri build --target x86_64-pc-windows-msvc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maildeck-tauri-windows-x64
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/
+          if-no-files-found: error

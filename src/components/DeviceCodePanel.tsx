@@ -42,6 +42,9 @@ export function DeviceCodePanel({ onAuthorized }: { onAuthorized: (result: Devic
 
   useEffect(() => {
     const api = getDesktopApi();
+    if (!api) {
+      return;
+    }
     const unsubscribe = api.auth.onDeviceCodeState((event: DeviceCodeStateEvent) => {
       if (event.phase === "waiting") {
         setUserCode(event.userCode);
@@ -83,7 +86,11 @@ export function DeviceCodePanel({ onAuthorized }: { onAuthorized: (result: Devic
     setMessage("");
     setCopied(false);
     try {
-      const session = await getDesktopApi().auth.startDeviceCode();
+      const api = getDesktopApi();
+      if (!api) {
+        throw new Error("当前页面未连接到 MailDeck 服务端。");
+      }
+      const session = await api.auth.startDeviceCode();
       setUserCode(session.userCode);
       setVerificationUri(session.verificationUri);
       setRemainingSec(session.expiresInSec);
@@ -96,7 +103,7 @@ export function DeviceCodePanel({ onAuthorized }: { onAuthorized: (result: Devic
 
   async function cancel() {
     try {
-      await getDesktopApi().auth.cancelDeviceCode();
+      await getDesktopApi()?.auth.cancelDeviceCode();
     } catch {
       // 取消失败不影响界面回到初始态。
     }
@@ -107,7 +114,11 @@ export function DeviceCodePanel({ onAuthorized }: { onAuthorized: (result: Devic
   async function openSignup() {
     setSignupOpenFailed(false);
     try {
-      await getDesktopApi().app.openExternal(SIGNUP_URL);
+      const api = getDesktopApi();
+      if (!api) {
+        throw new Error("当前页面未连接到 MailDeck 服务端。");
+      }
+      await api.app.openExternal(SIGNUP_URL);
       setSignupOpened(true);
     } catch {
       // 主进程拒绝或打不开浏览器时不再静默：给出地址让用户手动访问。
@@ -192,7 +203,7 @@ export function DeviceCodePanel({ onAuthorized }: { onAuthorized: (result: Devic
         <button
           type="button"
           className="secondary-button dark-button"
-          onClick={() => void getDesktopApi().app.openExternal(verificationUri)}
+          onClick={() => void getDesktopApi()?.app.openExternal(verificationUri)}
         >
           <ExternalLink size={14} /> 打开登录页
         </button>

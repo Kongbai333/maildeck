@@ -48,6 +48,10 @@ function looksLikeUuid(value: string) {
   return UUID_PATTERN.test(value.trim());
 }
 
+function parseTags(value: string | undefined): string[] {
+  return [...new Set((value || "").split(/[,|;]/u).map((tag) => tag.trim()).filter(Boolean))];
+}
+
 function parseDashedLine(cells: string[]): AccountInput {
   const secondLooksClientId = looksLikeUuid(cells[1] || "");
   const thirdLooksClientId = looksLikeUuid(cells[2] || "");
@@ -58,7 +62,8 @@ function parseDashedLine(cells: string[]): AccountInput {
       clientId: cells[2] || "",
       refreshToken: cells[3] || "",
       remark: cells[4] || "",
-      group: cells[5] || ""
+      group: cells[5] || "",
+      ...(parseTags(cells[6]).length > 0 ? { tags: parseTags(cells[6]) } : {})
     };
   }
 
@@ -67,7 +72,8 @@ function parseDashedLine(cells: string[]): AccountInput {
     clientId: cells[1] || "",
     refreshToken: cells[2] || "",
     remark: cells[3] || "",
-    group: cells[4] || ""
+    group: cells[4] || "",
+    ...(parseTags(cells[5]).length > 0 ? { tags: parseTags(cells[5]) } : {})
   };
 }
 
@@ -92,6 +98,7 @@ export function parseAccountImport(text: string): AccountInput[] {
     const refreshTokenIndex = indexOf("refresh_token", "refreshtoken", "refresh token", "rt");
     const remarkIndex = indexOf("remark", "note", "备注");
     const groupIndex = indexOf("group", "分组");
+    const tagsIndex = indexOf("tags", "tag", "标签");
 
     return lines.slice(1).map((line) => {
       const cells = parseCsvLine(line);
@@ -100,7 +107,10 @@ export function parseAccountImport(text: string): AccountInput[] {
         clientId: cells[clientIdIndex] || "",
         refreshToken: cells[refreshTokenIndex] || "",
         remark: remarkIndex >= 0 ? cells[remarkIndex] || "" : "",
-        group: groupIndex >= 0 ? cells[groupIndex] || "" : ""
+        group: groupIndex >= 0 ? cells[groupIndex] || "" : "",
+        ...(tagsIndex >= 0 && parseTags(cells[tagsIndex]).length > 0
+          ? { tags: parseTags(cells[tagsIndex]) }
+          : {})
       };
     });
   }
@@ -117,7 +127,8 @@ export function parseAccountImport(text: string): AccountInput[] {
       clientId: cells[1] || "",
       refreshToken: cells[2] || "",
       remark: cells[3] || "",
-      group: cells[4] || ""
+      group: cells[4] || "",
+      ...(parseTags(cells[5]).length > 0 ? { tags: parseTags(cells[5]) } : {})
     };
   });
 }

@@ -2,7 +2,7 @@ Add-Type -AssemblyName System.Drawing
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$ReleaseExe = Join-Path $Root "release\win-unpacked\MailDeck.exe"
+$ReleaseExe = Join-Path $Root "release\win-unpacked\MailDeck Cloud.exe"
 $UserData = Join-Path $Root "tmp-release-verify-user-data"
 $Port = 9340
 $PackageJson = Get-Content -LiteralPath (Join-Path $Root "package.json") -Raw -Encoding UTF8 | ConvertFrom-Json

@@ -79,6 +79,15 @@ function setInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function openFolderOptionLabels(): string[] {
+  const trigger = container.querySelector<HTMLButtonElement>(".folder-select .app-select-trigger");
+  expect(trigger).not.toBeNull();
+  act(() => trigger!.click());
+  return Array.from(document.body.querySelectorAll(".app-select-option")).map(
+    (option) => option.textContent?.replace(/\s+/g, "") ?? ""
+  );
+}
+
 function queryRefreshButton() {
   const button = container.querySelector<HTMLButtonElement>("button.toolbar-icon");
   if (!button) {
@@ -261,9 +270,7 @@ describe("MessageList", () => {
       ]
     });
 
-    const select = container.querySelector<HTMLSelectElement>(".folder-select");
-    expect(select).not.toBeNull();
-    const labels = [...select!.options].map((option) => option.textContent);
+    const labels = openFolderOptionLabels();
     expect(labels.filter((label) => label === "收件箱")).toHaveLength(1);
     expect(labels).toEqual(["收件箱", "垃圾邮件", "存档"]);
   });
@@ -278,8 +285,7 @@ describe("MessageList", () => {
       ]
     });
 
-    const select = container.querySelector<HTMLSelectElement>(".folder-select");
-    const labels = [...select!.options].map((option) => option.textContent);
+    const labels = openFolderOptionLabels();
     expect(labels).toEqual(["收件箱", "垃圾邮件", "存档"]);
   });
 });
