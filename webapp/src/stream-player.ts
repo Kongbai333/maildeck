@@ -24,13 +24,23 @@ const PROXIED_MAX_STREAMS = 12;
 /** 0 = 主播放器（最高优先），1 = 预览 */
 export type StreamPriority = 0 | 1;
 
+/** 当前生效的播放模式（由页面探测后写入）。 */
+let runtimeMode: StreamMode | null = null;
+
+export function setRuntimeStreamMode(mode: StreamMode): void {
+  runtimeMode = mode;
+}
+
+export function getRuntimeStreamMode(): StreamMode {
+  if (runtimeMode !== null) return runtimeMode;
+  return typeof window !== "undefined" && window.location.protocol === "https:" ? "proxy" : "direct";
+}
+
 let activeStreams = 0;
 const streamWaiters: Array<{ priority: StreamPriority; resolve: () => void }> = [];
 
 function maxStreams(): number {
-  return typeof window !== "undefined" && window.location.protocol === "https:"
-    ? PROXIED_MAX_STREAMS
-    : DIRECT_MAX_STREAMS;
+  return getRuntimeStreamMode() === "proxy" ? PROXIED_MAX_STREAMS : DIRECT_MAX_STREAMS;
 }
 
 function makeReleaser(): () => void {
@@ -66,19 +76,51 @@ export function activeStreamCount(): number {
 }
 
 /**
- * 页面是 HTTPS 时，http:// 直播流会被浏览器按混合内容拦截，必须走服务端同源代理。
- * 同时代理后浏览器可用 HTTP/2 复用连接，不再受 6 条/主机的限制，多路预览才跑得起来。
+ * 播放模式：
+ * - direct：浏览器直接拉 CDN 的 http 流（走用户本地流量，服务器/CF 都不参与）
+ * - proxy ：经服务端同源代理（https 页面被混合内容拦截时才不得不走）
  */
-export function streamUrlFor(url: string): string {
-  if (typeof window !== "undefined" && window.location.protocol === "https:" && /^http:\/\//iu.test(url)) {
-    return `/api/me/online-play/stream?url=${encodeURIComponent(url)}`;
-  }
-  return url;
+export type StreamMode = "direct" | "proxy";
+
+export function streamUrlFor(url: string, mode: StreamMode): string {
+  return mode === "proxy" ? `/api/me/online-play/stream?url=${encodeURIComponent(url)}` : url;
 }
 
-/** 是否处于同源代理模式（HTTPS 部署）。 */
+/**
+ * 探测能否直连（用户本地流量）。
+ * - 非 https 页面：本来就能直连，直接 direct；
+ * - https 页面：试着拉一下真实的 http 流。浏览器若按混合内容拦截 → 抛错 → 回退 proxy；
+ *   若用户在站点设置里允许了「不安全内容」，这里会成功 → 直连，省掉服务器/CF 流量。
+ */
+export async function detectStreamMode(sampleUrl: string): Promise<StreamMode> {
+  if (typeof window === "undefined") {
+    return "direct";
+  }
+  if (window.location.protocol !== "https:") {
+    return "direct";
+  }
+  if (!/^http:\/\//iu.test(sampleUrl)) {
+    return "direct";
+  }
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(sampleUrl, { mode: "cors", cache: "no-store", signal: controller.signal });
+    window.clearTimeout(timer);
+    try {
+      await response.body?.cancel();
+    } catch {
+      /* ignore */
+    }
+    return response.ok ? "direct" : "proxy";
+  } catch {
+    return "proxy";
+  }
+}
+
+/** 兼容旧调用：是否处于同源代理模式。 */
 export function isProxied(): boolean {
-  return typeof window !== "undefined" && window.location.protocol === "https:";
+  return getRuntimeStreamMode() === "proxy";
 }
 
 function loadScript(src: string, globalName: "flvjs" | "Hls"): Promise<any> {
@@ -111,6 +153,8 @@ export interface AttachOptions {
   muted?: boolean;
   /** 0 = 主播放器，1 = 预览（默认 1） */
   priority?: StreamPriority;
+  /** 直连 or 走代理；不传则用页面探测到的全局模式 */
+  mode?: StreamMode;
   /** 超过这个时间还没出画面就判定「卡住」，默认 12s；0 = 不检测 */
   stallTimeoutMs?: number;
   onError?: (message: string) => void;
@@ -183,7 +227,7 @@ export async function attachStream(
   }
 
   try {
-    const target = streamUrlFor(url);
+    const target = streamUrlFor(url, options.mode ?? getRuntimeStreamMode());
     if (/\.flv(\?|$)/i.test(url)) {
       const flvjs = await loadScript(FLV_CDN, "flvjs");
       if (disposed) return { destroy };

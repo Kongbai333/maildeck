@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, Eye, EyeOff, Play, RefreshCw, Tv } from "lucide-react";
+import { Copy, ExternalLink, Eye, EyeOff, Play, RefreshCw, Server, Tv, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { isAbortError, isUnauthorizedError, onlinePlayHosts, onlinePlayPlatforms } from "../../api";
@@ -8,7 +8,14 @@ import { Skeleton } from "../../components/Skeleton";
 import { Spinner } from "../../components/Spinner";
 import { useToast } from "../../components/Toast";
 import { errorText, useApiFailure } from "../../session";
-import { attachStream, isProxied, type StreamHandle } from "../../stream-player";
+import {
+  attachStream,
+  detectStreamMode,
+  getRuntimeStreamMode,
+  setRuntimeStreamMode,
+  type StreamHandle,
+  type StreamMode
+} from "../../stream-player";
 import type { OnlineHost, OnlinePlatform } from "../../types";
 import { copyText, cx } from "../../utils";
 
@@ -20,9 +27,17 @@ import { copyText, cx } from "../../utils";
  *   所以预览全局 4 路、同一 CDN 只 1 路，给主播放器留足连接。
  * - HTTPS（走服务端同源代理 + HTTP/2）：没有 6 条/主机限制，可以多开几路，按 3×3 给 9 路。
  */
-const PROXIED = isProxied();
-const PREVIEW_MAX = PROXIED ? 9 : 4;
-const PREVIEW_PER_HOST = PROXIED ? 99 : 1;
+/**
+ * 预览限流（随播放模式自适应）：
+ * - direct（浏览器直连 CDN）：受「同一主机 6 条连接」限制，实测同 CDN 19 路只有 6 路出画面，
+ *   所以预览 4 路、同一 CDN 1 路，留 2 条给主播放器；
+ * - proxy（经服务端同源代理 + h2）：不受 6 条限制，放宽到 9 路。
+ */
+function previewLimits(): { max: number; perHost: number } {
+  return getRuntimeStreamMode() === "proxy"
+    ? { max: 9, perHost: 99 }
+    : { max: 4, perHost: 1 };
+}
 
 let previewActive = 0;
 const previewByHost = new Map<string, number>();
@@ -34,8 +49,9 @@ function hostOfUrl(url: string): string {
 }
 
 function takePreviewSlot(host: string): (() => void) | null {
-  if (previewActive >= PREVIEW_MAX) return null;
-  if ((previewByHost.get(host) ?? 0) >= PREVIEW_PER_HOST) return null;
+  const lim = previewLimits();
+  if (previewActive >= lim.max) return null;
+  if ((previewByHost.get(host) ?? 0) >= lim.perHost) return null;
   previewActive += 1;
   previewByHost.set(host, (previewByHost.get(host) ?? 0) + 1);
   let released = false;
@@ -120,11 +136,13 @@ function rotatePreview(): boolean {
 function HostCard({
   host,
   onOpen,
-  forcePreview
+  forcePreview,
+  mode
 }: {
   host: OnlineHost;
   onOpen: (host: OnlineHost) => void;
   forcePreview: boolean;
+  mode: StreamMode;
 }): ReactNode {
   const cardRef = useRef<HTMLButtonElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -170,6 +188,7 @@ function HostCard({
         const handle = await attachStream(video, host.address, {
           muted: true,
           priority: 1,
+          mode,
           stallTimeoutMs: 8000,
           onPlaying: () => {
             if (activeRef.current) setPreviewing(true);
@@ -187,7 +206,7 @@ function HostCard({
         else handle.destroy();
       })();
     },
-    [host.address, hostname, stop]
+    [host.address, hostname, mode, stop]
   );
 
   /**
@@ -326,10 +345,12 @@ function HostCard({
 function PlayerModal({
   hosts,
   start,
+  mode,
   onClose
 }: {
   hosts: OnlineHost[];
   start: OnlineHost;
+  mode: StreamMode;
   onClose: () => void;
 }): ReactNode {
   const toast = useToast();
@@ -350,6 +371,7 @@ function PlayerModal({
     void attachStream(video, current.address, {
       // 主播放器优先抢槽位（预览会排在它后面）
       priority: 0,
+      mode,
       stallTimeoutMs: 15_000,
       onPlaying: () => {
         if (!cancelled) setLoading(false);
@@ -369,7 +391,7 @@ function PlayerModal({
       handleRef.current?.destroy();
       handleRef.current = null;
     };
-  }, [current, retryToken]);
+  }, [current, mode, retryToken]);
 
   // 切换时把当前项滚进可视区
   useEffect(() => {
@@ -479,6 +501,17 @@ export function OnlinePlayPage(): ReactNode {
   const [playing, setPlaying] = useState<OnlineHost | null>(null);
   const [previewAll, setPreviewAll] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  /** 直连（走用户本地流量）还是经服务器代理；由探测决定，也可手动切换 */
+  const [mode, setMode] = useState<StreamMode>(() => getRuntimeStreamMode());
+  const [modeDetected, setModeDetected] = useState(false);
+
+  const applyMode = useCallback((next: StreamMode): void => {
+    setRuntimeStreamMode(next);
+    // 模式变了，已挂着的流要重挂：把预览全部停掉，交给轮播/悬停重新拉起
+    for (const [, entry] of activePreviews) entry.stop();
+    activePreviews.clear();
+    setMode(next);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -537,6 +570,26 @@ export function OnlinePlayPage(): ReactNode {
 
   const reload = useCallback(() => setReloadToken((v) => v + 1), []);
   const activeTitle = platforms.find((item) => item.address === activePlatform)?.title ?? "";
+
+  /**
+   * 探测一次：https 页面先试着直连真实 http 流。
+   * 成功 → direct（浏览器走自己本地流量，服务器/CF 都不参与）；
+   * 被混合内容拦 → proxy（回退服务端代理）。
+   */
+  useEffect(() => {
+    if (modeDetected || hosts.length === 0) return undefined;
+    let cancelled = false;
+    void detectStreamMode(hosts[0].address).then((detected) => {
+      if (cancelled) return;
+      setModeDetected(true);
+      if (detected !== getRuntimeStreamMode()) {
+        applyMode(detected);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyMode, hosts, modeDetected]);
 
   // 「全部预览」轮播：视口内每一路轮流上场，扫一遍就知道哪个值得点开
   useEffect(() => {
@@ -615,10 +668,23 @@ export function OnlinePlayPage(): ReactNode {
             </div>
             <button
               type="button"
+              className={cx("btn btn-sm", mode === "direct" ? "btn-ghost" : "btn-ghost")}
+              onClick={() => applyMode(mode === "direct" ? "proxy" : "direct")}
+              title={
+                mode === "direct"
+                  ? "当前：浏览器直连（走你自己的本地流量，服务器与 CF 都不参与）。点击改为经服务器代理。"
+                  : "当前：经服务器代理（https 页面被混合内容拦截时的兜底，会占用服务器/CF 流量）。点击改为尝试直连。"
+              }
+            >
+              {mode === "direct" ? <Zap size={15} aria-hidden="true" /> : <Server size={15} aria-hidden="true" />}
+              {mode === "direct" ? "直连" : "代理"}
+            </button>
+            <button
+              type="button"
               className={cx("btn btn-sm", previewAll ? "btn-primary" : "btn-ghost")}
               onClick={() => setPreviewAll((v) => !v)}
               disabled={hosts.length === 0}
-              title={`对当前平台视口内的频道同时静音预览（最多同时 ${PREVIEW_MAX} 路${PROXIED ? "" : "、同一 CDN 1 路"}，其余排队）`}
+              title={`对当前平台视口内的频道同时静音预览（当前模式最多同时 ${previewLimits().max} 路，其余排队轮播）`}
             >
               {previewAll ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
               {previewAll ? "关闭全部预览" : "全部预览"}
@@ -649,6 +715,7 @@ export function OnlinePlayPage(): ReactNode {
                 <HostCard
                   key={`${host.address}-${index}`}
                   host={host}
+                  mode={mode}
                   forcePreview={previewAll}
                   onOpen={(next) => {
                     setPreviewAll(false);
@@ -661,7 +728,9 @@ export function OnlinePlayPage(): ReactNode {
         </section>
       </div>
 
-      {playing !== null ? <PlayerModal hosts={hosts} start={playing} onClose={() => setPlaying(null)} /> : null}
+      {playing !== null ? (
+        <PlayerModal hosts={hosts} start={playing} mode={mode} onClose={() => setPlaying(null)} />
+      ) : null}
     </div>
   );
 }
