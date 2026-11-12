@@ -82,29 +82,58 @@ export function activeStreamCount(): number {
  */
 export type StreamMode = "direct" | "proxy";
 
+/** 按模式拼出实际请求地址：直连 = 原 CDN 地址；代理 = 同源 /api 代理。 */
 export function streamUrlFor(url: string, mode: StreamMode): string {
   return mode === "proxy" ? `/api/me/online-play/stream?url=${encodeURIComponent(url)}` : url;
 }
 
+/** 模式记忆：下次进来沿用上次选择。 */
+const MODE_KEY = "maildeck.onlinePlay.mode";
+
+export function readSavedMode(): StreamMode | null {
+  try {
+    const saved = window.localStorage.getItem(MODE_KEY);
+    return saved === "direct" || saved === "proxy" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveMode(mode: StreamMode): void {
+  try {
+    window.localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    /* 隐私模式忽略 */
+  }
+}
+
+export interface ModeProbe {
+  /** 可用的话应该是哪种模式 */
+  mode: StreamMode;
+  ok: boolean;
+  /** 诊断原因：http-page / reachable / blocked / HTTP xxx */
+  reason: string;
+}
+
 /**
- * 探测能否直连（用户本地流量）。
- * - 非 https 页面：本来就能直连，直接 direct；
- * - https 页面：试着拉一下真实的 http 流。浏览器若按混合内容拦截 → 抛错 → 回退 proxy；
- *   若用户在站点设置里允许了「不安全内容」，这里会成功 → 直连，省掉服务器/CF 流量。
+ * 探测能否直连（走用户本地流量）。
+ * https 页面下用真实 http 流试拉一次：
+ * - 成功 → 直连可用（用户在站点设置里允许了「不安全内容」）
+ * - 抛错 → 浏览器按混合内容拦截（或网络不可达），只能走代理
  */
-export async function detectStreamMode(sampleUrl: string): Promise<StreamMode> {
+export async function probeDirect(sampleUrl: string): Promise<ModeProbe> {
   if (typeof window === "undefined") {
-    return "direct";
+    return { mode: "direct", ok: true, reason: "no-window" };
   }
   if (window.location.protocol !== "https:") {
-    return "direct";
+    return { mode: "direct", ok: true, reason: "http-page" };
   }
   if (!/^http:\/\//iu.test(sampleUrl)) {
-    return "direct";
+    return { mode: "direct", ok: true, reason: "already-https" };
   }
   try {
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 5000);
+    const timer = window.setTimeout(() => controller.abort(), 6000);
     const response = await fetch(sampleUrl, { mode: "cors", cache: "no-store", signal: controller.signal });
     window.clearTimeout(timer);
     try {
@@ -112,10 +141,20 @@ export async function detectStreamMode(sampleUrl: string): Promise<StreamMode> {
     } catch {
       /* ignore */
     }
-    return response.ok ? "direct" : "proxy";
-  } catch {
-    return "proxy";
+    if (response.ok) {
+      return { mode: "direct", ok: true, reason: "reachable" };
+    }
+    return { mode: "proxy", ok: false, reason: `HTTP ${response.status}` };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { mode: "proxy", ok: false, reason: message || "blocked" };
   }
+}
+
+/** 兼容旧调用：只返回模式。 */
+export async function detectStreamMode(sampleUrl: string): Promise<StreamMode> {
+  const probe = await probeDirect(sampleUrl);
+  return probe.mode;
 }
 
 /** 兼容旧调用：是否处于同源代理模式。 */

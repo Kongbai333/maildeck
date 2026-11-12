@@ -10,8 +10,10 @@ import { useToast } from "../../components/Toast";
 import { errorText, useApiFailure } from "../../session";
 import {
   attachStream,
-  detectStreamMode,
   getRuntimeStreamMode,
+  probeDirect,
+  readSavedMode,
+  saveMode,
   setRuntimeStreamMode,
   type StreamHandle,
   type StreamMode
@@ -488,6 +490,7 @@ function PlayerModal({
 /* ---------------------------- 页面 ---------------------------- */
 
 export function OnlinePlayPage(): ReactNode {
+  const toast = useToast();
   const handleFailure = useApiFailure();
   const [platforms, setPlatforms] = useState<OnlinePlatform[]>([]);
   const [platformsLoading, setPlatformsLoading] = useState(true);
@@ -502,16 +505,48 @@ export function OnlinePlayPage(): ReactNode {
   const [previewAll, setPreviewAll] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   /** 直连（走用户本地流量）还是经服务器代理；由探测决定，也可手动切换 */
-  const [mode, setMode] = useState<StreamMode>(() => getRuntimeStreamMode());
-  const [modeDetected, setModeDetected] = useState(false);
+  const [mode, setMode] = useState<StreamMode>(() => readSavedMode() ?? getRuntimeStreamMode());
+  const [modeDetected, setModeDetected] = useState(() => readSavedMode() !== null);
+
+  /** 直连不可用时的诊断提示（带具体原因，避免「点了没反应」）。 */
+  const [directBlocked, setDirectBlocked] = useState<string | null>(null);
 
   const applyMode = useCallback((next: StreamMode): void => {
     setRuntimeStreamMode(next);
+    saveMode(next);
     // 模式变了，已挂着的流要重挂：把预览全部停掉，交给轮播/悬停重新拉起
     for (const [, entry] of activePreviews) entry.stop();
     activePreviews.clear();
     setMode(next);
   }, []);
+
+  /** 切换模式：切直连前先自检，被拦就明确告诉用户原因，而不是留一片黑。 */
+  const switchMode = useCallback(
+    async (next: StreamMode): Promise<void> => {
+      if (next === "direct") {
+        const sample = hosts[0]?.address;
+        if (sample) {
+          const probe = await probeDirect(sample);
+          if (!probe.ok) {
+            const reason = probe.reason.includes("Failed to fetch") || probe.reason === "blocked"
+              ? "浏览器仍在拦截 http 流（Mixed Content）"
+              : probe.reason;
+            setDirectBlocked(reason);
+            toast.error(`直连不可用：${reason}`);
+            return;
+          }
+        }
+        setDirectBlocked(null);
+        applyMode("direct");
+        toast.success("已切换到直连：走你本机的网络，不经过服务器和 CF");
+        return;
+      }
+      setDirectBlocked(null);
+      applyMode("proxy");
+      toast.success("已切换到代理：经服务器中转（适合浏览器拦截 http 流时）");
+    },
+    [applyMode, hosts, toast]
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -579,11 +614,18 @@ export function OnlinePlayPage(): ReactNode {
   useEffect(() => {
     if (modeDetected || hosts.length === 0) return undefined;
     let cancelled = false;
-    void detectStreamMode(hosts[0].address).then((detected) => {
+    void probeDirect(hosts[0].address).then((probe) => {
       if (cancelled) return;
       setModeDetected(true);
-      if (detected !== getRuntimeStreamMode()) {
-        applyMode(detected);
+      if (!probe.ok) {
+        setDirectBlocked(
+          probe.reason.includes("Failed to fetch") || probe.reason === "blocked"
+            ? "浏览器仍在拦截 http 流（Mixed Content）"
+            : probe.reason
+        );
+      }
+      if (probe.mode !== getRuntimeStreamMode()) {
+        applyMode(probe.mode);
       }
     });
     return () => {
@@ -669,7 +711,7 @@ export function OnlinePlayPage(): ReactNode {
             <button
               type="button"
               className={cx("btn btn-sm", mode === "direct" ? "btn-ghost" : "btn-ghost")}
-              onClick={() => applyMode(mode === "direct" ? "proxy" : "direct")}
+              onClick={() => void switchMode(mode === "direct" ? "proxy" : "direct")}
               title={
                 mode === "direct"
                   ? "当前：浏览器直连（走你自己的本地流量，服务器与 CF 都不参与）。点击改为经服务器代理。"
@@ -694,6 +736,17 @@ export function OnlinePlayPage(): ReactNode {
               刷新
             </button>
           </div>
+
+          {directBlocked !== null ? (
+            <div className="alert alert-warning" role="status" style={{ margin: "0 16px 8px" }}>
+              <strong>直连不可用：</strong>
+              {directBlocked}
+              <span className="cell-muted" style={{ display: "block", marginTop: 4 }}>
+                解决：地址栏左侧图标 → 网站设置 → 「不安全内容」改为“允许”，然后<b>完全退出并重启浏览器</b>（仅刷新不够）。
+                做不到就继续用「代理」模式，功能正常，只是流量经服务器/CF。
+              </span>
+            </div>
+          ) : null}
 
           {hostsError !== null ? (
             <div className="alert alert-error" role="alert" style={{ margin: "0 16px 8px" }}>
