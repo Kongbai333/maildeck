@@ -69,6 +69,30 @@ export async function listOnlinePlatforms(): Promise<OnlinePlatform[]> {
     .filter((item) => item.address !== "");
 }
 
+/**
+ * 已知的流主机白名单：只允许代理「确实出现在平台列表里」的主机，
+ * 防止 /stream 端点被当成任意 URL 代理（SSRF）。
+ */
+const knownStreamHosts = new Set<string>();
+
+function hostOf(address: string): string {
+  const matched = address.match(/^https?:\/\/([^/?#]+)/i);
+  return matched ? matched[1].toLowerCase() : "";
+}
+
+function rememberHosts(rows: OnlineHost[]): void {
+  for (const row of rows) {
+    const host = hostOf(row.address);
+    if (host) {
+      knownStreamHosts.add(host);
+    }
+  }
+}
+
+export function isKnownStreamHost(host: string): boolean {
+  return knownStreamHosts.has(host.trim().toLowerCase());
+}
+
 export async function listOnlineHosts(platform: string): Promise<OnlineHost[]> {
   const name = platform.trim();
   // 严格白名单，防止把任意 URL/路径拼进上游请求（SSRF）。
@@ -90,7 +114,7 @@ export async function listOnlineHosts(platform: string): Promise<OnlineHost[]> {
       : Array.isArray(data)
         ? data
         : [];
-  return rows
+  const hosts = rows
     .map((item) => {
       const row = asRecord(item);
       return {
@@ -100,4 +124,6 @@ export async function listOnlineHosts(platform: string): Promise<OnlineHost[]> {
       };
     })
     .filter((item) => item.address !== "");
+  rememberHosts(hosts);
+  return hosts;
 }

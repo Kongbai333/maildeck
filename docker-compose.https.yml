@@ -1,0 +1,39 @@
+# MailDeck + Caddy（自动 HTTPS/H2）+ 在线播放流代理 一键部署
+#
+# 用法：
+#   1) 改 Caddyfile 里的域名（deploy/Caddyfile）
+#   2) 同目录放 .env：MAILDECK_MASTER_KEY / MAILDECK_ADMIN_PASSWORD
+#   3) docker compose -f docker-compose.https.yml up -d
+#
+# 说明：浏览器访问 https://你的域名 → Caddy(h2) → maildeck:8787。
+# 直播流走 /api/me/online-play/stream 同源代理，因此 https 页面不会再被混合内容拦截。
+
+services:
+  maildeck:
+    image: ghcr.io/kongbai333/maildeck:latest
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      MAILDECK_HOST: "0.0.0.0"
+      MAILDECK_PORT: "8787"
+      MAILDECK_DATA_DIR: "/data"
+    volumes:
+      - /volume4/docker/maildeck/maildeck-data:/data
+    expose:
+      - "8787"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [maildeck]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

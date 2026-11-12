@@ -13,15 +13,25 @@ const HLS_CDN = "https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js";
 /**
  * 全局并发闸门。
  * 浏览器对**同一个主机**最多 6 条 HTTP/1.1 连接（实测同一 CDN 上 19 路并发只有 6 路能出画面，
- * 其余静默排队、readyState 一直是 0），所以这里把「同时拉流的总数」压到 6，
+ * 其余静默排队、readyState 一直是 0），所以直连时把「同时拉流的总数」压到 6，
  * 并让主播放器优先于预览抢槽位，避免预览把主播放器挤死。
+ *
+ * HTTPS 走同源代理时：浏览器对同一 origin 用 HTTP/2 多路复用（不再按 6 条算），
+ * 上游连接由服务端建立（实测同主机 12 路并发全部 200），所以闸门放宽到 12 路。
  */
-const MAX_STREAMS = 6;
+const DIRECT_MAX_STREAMS = 6;
+const PROXIED_MAX_STREAMS = 12;
 /** 0 = 主播放器（最高优先），1 = 预览 */
 export type StreamPriority = 0 | 1;
 
 let activeStreams = 0;
 const streamWaiters: Array<{ priority: StreamPriority; resolve: () => void }> = [];
+
+function maxStreams(): number {
+  return typeof window !== "undefined" && window.location.protocol === "https:"
+    ? PROXIED_MAX_STREAMS
+    : DIRECT_MAX_STREAMS;
+}
 
 function makeReleaser(): () => void {
   let released = false;
@@ -39,7 +49,7 @@ function makeReleaser(): () => void {
 }
 
 async function acquireStreamSlot(priority: StreamPriority): Promise<() => void> {
-  if (activeStreams < MAX_STREAMS && streamWaiters.length === 0) {
+  if (activeStreams < maxStreams() && streamWaiters.length === 0) {
     activeStreams += 1;
     return makeReleaser();
   }
@@ -50,9 +60,25 @@ async function acquireStreamSlot(priority: StreamPriority): Promise<() => void> 
   return makeReleaser();
 }
 
-/** 当前占用的流连接数（调试/展示用）。 */
+/** 当前占用中的流连接数（调试/展示用）。 */
 export function activeStreamCount(): number {
   return activeStreams;
+}
+
+/**
+ * 页面是 HTTPS 时，http:// 直播流会被浏览器按混合内容拦截，必须走服务端同源代理。
+ * 同时代理后浏览器可用 HTTP/2 复用连接，不再受 6 条/主机的限制，多路预览才跑得起来。
+ */
+export function streamUrlFor(url: string): string {
+  if (typeof window !== "undefined" && window.location.protocol === "https:" && /^http:\/\//iu.test(url)) {
+    return `/api/me/online-play/stream?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
+/** 是否处于同源代理模式（HTTPS 部署）。 */
+export function isProxied(): boolean {
+  return typeof window !== "undefined" && window.location.protocol === "https:";
 }
 
 function loadScript(src: string, globalName: "flvjs" | "Hls"): Promise<any> {
@@ -157,6 +183,7 @@ export async function attachStream(
   }
 
   try {
+    const target = streamUrlFor(url);
     if (/\.flv(\?|$)/i.test(url)) {
       const flvjs = await loadScript(FLV_CDN, "flvjs");
       if (disposed) return { destroy };
@@ -164,7 +191,7 @@ export async function attachStream(
         options.onError?.("当前浏览器不支持 FLV 直播");
         return { destroy };
       }
-      player = flvjs.createPlayer({ type: "flv", url, isLive: true, hasAudio: true });
+      player = flvjs.createPlayer({ type: "flv", url: target, isLive: true, hasAudio: true });
       player.on(flvjs.Events.ERROR, (_type: string, detail: string) => {
         if (!disposed) options.onError?.(`播放出错：${detail || "流不可用/被跨域拦截"}`);
       });
@@ -188,7 +215,7 @@ export async function attachStream(
       video.addEventListener("playing", onPlaying, { once: true });
       await video.play().catch(() => undefined);
     } else {
-      video.src = url;
+      video.src = target;
       video.addEventListener("playing", onPlaying, { once: true });
       await video.play().catch(() => undefined);
     }

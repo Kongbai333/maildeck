@@ -1,0 +1,24 @@
+# MailDeck · Caddy 反向代理（自动 HTTPS + HTTP/2，最省事）
+#
+# Caddy 自动申请证书、自动开 h2，适合个人 VPS。
+# 用法：caddy run --config Caddyfile   （或放进 /etc/caddy/Caddyfile）
+
+mail.example.com {
+	encode gzip
+
+	# 直播流：关掉响应缓冲、放宽超时
+	@stream path /api/me/online-play/stream*
+	handle @stream {
+		reverse_proxy 127.0.0.1:8787 {
+			flush_interval -1
+			transport http {
+				read_timeout 1h
+				write_timeout 1h
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8787
+	}
+}

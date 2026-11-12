@@ -8,19 +8,21 @@ import { Skeleton } from "../../components/Skeleton";
 import { Spinner } from "../../components/Spinner";
 import { useToast } from "../../components/Toast";
 import { errorText, useApiFailure } from "../../session";
-import { attachStream, type StreamHandle } from "../../stream-player";
+import { attachStream, isProxied, type StreamHandle } from "../../stream-player";
 import type { OnlineHost, OnlinePlatform } from "../../types";
 import { copyText, cx } from "../../utils";
 
 /* ---------------------------- 预览并发闸门 ---------------------------- */
 
 /**
- * 预览限流：浏览器对同一主机最多 6 条连接，实测同一 CDN 上 19 路并发只有 6 路能出画面，
- * 剩下静默排队（readyState 恒为 0）。所以预览全局最多 4 路、且同一 CDN 只允许 1 路，
- * 给主播放器留足连接，同时避免同主机互相抢占。
+ * 预览限流：
+ * - 直连 http 页面：浏览器对同一主机最多 6 条连接，实测同 CDN 19 路只有 6 路出画面，
+ *   所以预览全局 4 路、同一 CDN 只 1 路，给主播放器留足连接。
+ * - HTTPS（走服务端同源代理 + HTTP/2）：没有 6 条/主机限制，可以多开几路，按 3×3 给 9 路。
  */
-const PREVIEW_MAX = 4;
-const PREVIEW_PER_HOST = 1;
+const PROXIED = isProxied();
+const PREVIEW_MAX = PROXIED ? 9 : 4;
+const PREVIEW_PER_HOST = PROXIED ? 99 : 1;
 
 let previewActive = 0;
 const previewByHost = new Map<string, number>();
@@ -61,12 +63,56 @@ function flushPreviewWaiters(): void {
   }
 }
 
-function acquirePreview(host: string): Promise<() => void> {
+function acquirePreview(host: string, urgent = false): Promise<() => void> {
   const release = takePreviewSlot(host);
   if (release) return Promise.resolve(release);
   return new Promise((resolve) => {
-    previewWaiters.push({ host, resolve });
+    const waiter = { host, resolve };
+    // 悬停/点击触发的预览插队到最前面，保证「看到哪个就想看哪个」能立刻出画面
+    if (urgent) previewWaiters.unshift(waiter);
+    else previewWaiters.push(waiter);
   });
+}
+
+/** 还在排队等槽位的预览数（用于决定要不要轮播）。 */
+function previewWaitingCount(): number {
+  return previewWaiters.length;
+}
+
+/** 正在预览的卡片（key = 流地址）→ { stop, host }，用于悬停时腾槽位与轮播 */
+const activePreviews = new Map<string, { stop: () => void; host: string }>();
+/** 每张卡片的「重新排队」回调，用于轮播：让被清掉的卡重新回到队尾 */
+const previewRestart = new Map<string, () => void>();
+
+/**
+ * 悬停抢占：腾出一个槽位给 hoveredHost。
+ * 优先清掉「同一 CDN 主机」的预览（否则 per-host 限制仍会挡住它），其次清任意一路。
+ */
+function evictPreviewFor(keepKey: string, keepHost: string): void {
+  const sameHost = [...activePreviews.entries()].find(([key, v]) => key !== keepKey && v.host === keepHost);
+  const pick = sameHost ?? [...activePreviews.entries()].find(([key]) => key !== keepKey);
+  if (!pick) return;
+  activePreviews.delete(pick[0]);
+  pick[1].stop();
+}
+
+/**
+ * 轮播：把最早开始的一路预览清掉并重新排队。
+ * 浏览器无论直连还是走同源代理，HTTP/1.1 下同一 origin 都只有 6 条连接，
+ * 所以「一次只看 4~6 路」是硬限制；轮播让视口内每一路都能轮到，
+ * 扫一遍就知道哪个值得点开，比只显示前几路更有用。
+ */
+function rotatePreview(): boolean {
+  if (activePreviews.size === 0) return false;
+  const [key, entry] = activePreviews.entries().next().value as [string, { stop: () => void; host: string }];
+  activePreviews.delete(key);
+  entry.stop();
+  // 让这张卡稍后重新进队列（队尾），这样所有可见卡片都能轮流预览
+  const restart = previewRestart.get(key);
+  if (restart) {
+    window.setTimeout(() => restart(), 120);
+  }
+  return true;
 }
 
 /* ---------------------------- 主播卡片（悬停预览） ---------------------------- */
@@ -101,23 +147,22 @@ function HostCard({
     handleRef.current = null;
     releaseRef.current?.();
     releaseRef.current = null;
+    activePreviews.delete(host.address);
     setPreviewing(false);
     setQueued(false);
-  }, []);
+  }, [host.address]);
 
-  const start = useCallback((): void => {
-    if (failed || activeRef.current) return;
-    activeRef.current = true;
-    if (forcePreview) {
-      // 「全部预览」直接排队抢槽位；悬停模式先等 260ms 再去抖
+  const begin = useCallback(
+    (urgent: boolean): void => {
       setQueued(true);
       void (async () => {
-        const release = await acquirePreview(hostname);
+        const release = await acquirePreview(hostname, urgent);
         if (!activeRef.current) {
           release();
           return;
         }
         releaseRef.current = release;
+        activePreviews.set(host.address, { stop, host: hostname });
         setQueued(false);
         setPreviewing(true);
         const video = videoRef.current;
@@ -134,50 +179,77 @@ function HostCard({
               setFailed(true);
               setPreviewing(false);
               setQueued(false);
+              activePreviews.delete(host.address);
             }
           }
         });
         if (activeRef.current) handleRef.current = handle;
         else handle.destroy();
       })();
-      return;
-    }
-    timerRef.current = window.setTimeout(() => {
-      timerRef.current = null;
-      const video = videoRef.current;
-      if (!video) return;
-      setQueued(true);
-      void (async () => {
-        const release = await acquirePreview(hostname);
-        if (!activeRef.current) {
-          release();
-          return;
+    },
+    [host.address, hostname, stop]
+  );
+
+  /**
+   * 开始预览：
+   * - 「全部预览」模式：进视口即抢槽位；
+   * - 悬停 / 聚焦：先去抖 260ms，再插队抢槽位（并挤掉一路自动预览），
+   *   保证「看到哪个就想看哪个」能立刻出画面。
+   */
+  const start = useCallback(
+    (urgent = false): void => {
+      if (failed || activeRef.current) return;
+      activeRef.current = true;
+      if (forcePreview || urgent) {
+        if (urgent) {
+          // 先排队占位，再腾出别的卡片槽位，槽位会直接转交给排在最前面的它
+          begin(true);
+          evictPreviewFor(host.address, hostname);
+        } else {
+          begin(false);
         }
-        releaseRef.current = release;
-        setQueued(false);
-        setPreviewing(true);
-        const handle = await attachStream(video, host.address, {
-          muted: true,
-          priority: 1,
-          stallTimeoutMs: 8000,
-          onPlaying: () => {
-            if (activeRef.current) setPreviewing(true);
-          },
-          onError: () => {
-            if (activeRef.current) {
-              setFailed(true);
-              setPreviewing(false);
-              setQueued(false);
-            }
-          }
-        });
-        if (activeRef.current) handleRef.current = handle;
-        else handle.destroy();
-      })();
-    }, 260);
-  }, [failed, forcePreview, host.address, hostname]);
+        return;
+      }
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        begin(false);
+      }, 260);
+    },
+    [begin, failed, forcePreview, host.address, hostname]
+  );
+
+  /**
+   * 悬停抢占：即使这张卡已在轮播队列里排着，也要立刻插到队首并把当前占用的一路挤掉。
+   * （已在播放就不用动。）
+   */
+  const hoverTakeover = useCallback((): void => {
+    if (previewing) return;
+    if (activeRef.current) {
+      // 已在队列中：先撤销旧排队，再以最高优先级重新排
+      stop();
+    }
+    // 悬停重试：之前判过「无画面」的，再悬停一次重新试（begin 不看 failed 标志）
+    if (failed) setFailed(false);
+    activeRef.current = true;
+    begin(true);
+    evictPreviewFor(host.address, hostname);
+  }, [begin, failed, host.address, hostname, previewing, stop]);
 
   useEffect(() => () => stop(), [stop]);
+
+  // 注册「重新排队」回调（轮播用），卸载时清理
+  useEffect(() => {
+    previewRestart.set(host.address, () => {
+      if (!activeRef.current) {
+        activeRef.current = true;
+        begin(false);
+      }
+    });
+    return () => {
+      previewRestart.delete(host.address);
+      activePreviews.delete(host.address);
+    };
+  }, [begin, host.address]);
 
   // 「全部预览」：只对进入视口的卡片抢槽位，滚出视口立即释放
   useEffect(() => {
@@ -208,13 +280,13 @@ function HostCard({
       type="button"
       className={cx("op-card", queued && "op-card-queued")}
       onMouseEnter={() => {
-        if (!forcePreview) start();
+        hoverTakeover();
       }}
       onMouseLeave={() => {
         if (!forcePreview) stop();
       }}
       onFocus={() => {
-        if (!forcePreview) start();
+        hoverTakeover();
       }}
       onBlur={() => {
         if (!forcePreview) stop();
@@ -466,6 +538,17 @@ export function OnlinePlayPage(): ReactNode {
   const reload = useCallback(() => setReloadToken((v) => v + 1), []);
   const activeTitle = platforms.find((item) => item.address === activePlatform)?.title ?? "";
 
+  // 「全部预览」轮播：视口内每一路轮流上场，扫一遍就知道哪个值得点开
+  useEffect(() => {
+    if (!previewAll) return undefined;
+    const timer = window.setInterval(() => {
+      if (previewWaitingCount() > 0) {
+        rotatePreview();
+      }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [previewAll]);
+
   if (noPermission) {
     return (
       <section className="card">
@@ -535,7 +618,7 @@ export function OnlinePlayPage(): ReactNode {
               className={cx("btn btn-sm", previewAll ? "btn-primary" : "btn-ghost")}
               onClick={() => setPreviewAll((v) => !v)}
               disabled={hosts.length === 0}
-              title="对当前平台视口内的频道同时静音预览（受并发限制，最多 4 路、同一 CDN 1 路）"
+              title={`对当前平台视口内的频道同时静音预览（最多同时 ${PREVIEW_MAX} 路${PROXIED ? "" : "、同一 CDN 1 路"}，其余排队）`}
             >
               {previewAll ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
               {previewAll ? "关闭全部预览" : "全部预览"}
