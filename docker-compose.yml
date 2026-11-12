@@ -6,6 +6,7 @@ services:
     #   context: .
     container_name: maildeck
     restart: unless-stopped
+    pull_policy: always
     ports:
       - "8787:8787"
     environment:
