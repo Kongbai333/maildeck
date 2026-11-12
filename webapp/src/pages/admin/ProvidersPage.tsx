@@ -39,7 +39,7 @@ import { cx, PROVIDER_KIND_LABEL, PROVIDER_KIND_SHORT, PROVIDER_KIND_TONE } from
  * - mailtm：mail.tm 临时邮箱（免 Key 兜底）
  * 不在白名单内的类型即使后端返回也不会出现在下拉里。
  */
-const CREATE_PROVIDER_TYPES: readonly string[] = ["gptmail", "imap", "yyds", "mailtm", "cfmail"];
+const CREATE_PROVIDER_TYPES: readonly string[] = ["gptmail", "imap", "yyds", "mailtm", "cfmail", "cloudmail"];
 
 const DEFAULT_FIELDS: ProviderConfigField[] = ["baseUrl", "apiKey", "keyMode"];
 
@@ -69,7 +69,7 @@ function CreateProviderModal({
   const fields = selected !== null && selected.configFields.length > 0 ? selected.configFields : DEFAULT_FIELDS;
   const has = (field: ProviderConfigField): boolean => fields.includes(field);
   const requiresKey = selected?.requiresKey ?? true;
-  const keyLabel = has("host") || type === "imap" ? "密码" : "API Key";
+  const keyLabel = has("host") || type === "imap" || type === "cloudmail" ? "密码" : "API Key";
 
   const onTypeChange = (next: string): void => {
     setType(next);
@@ -101,10 +101,10 @@ function CreateProviderModal({
       return;
     }
     if (has("user") && user.trim() === "") {
-      setError("请填写 IMAP 用户名");
+      setError(type === "cloudmail" ? "请填写 Cloud Mail 登录邮箱" : "请填写 IMAP 用户名");
       return;
     }
-    if (has("domain") && domain.trim() === "") {
+    if (has("domain") && domain.trim() === "" && type !== "cloudmail") {
       setError("请填写 catch-all 域名");
       return;
     }
@@ -262,12 +262,12 @@ function CreateProviderModal({
 
         {has("user") ? (
           <label className="field">
-            <span className="field-label">IMAP 用户名</span>
+            <span className="field-label">{type === "cloudmail" ? "登录邮箱（Cloud Mail 账号）" : "IMAP 用户名"}</span>
             <input
               className="input"
               value={user}
               onChange={(event) => setUser(event.target.value)}
-              placeholder="catch-all@example.com"
+              placeholder={type === "cloudmail" ? "you@example.com" : "catch-all@example.com"}
               autoComplete="off"
               disabled={submitting}
             />
@@ -296,7 +296,13 @@ function CreateProviderModal({
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
                 autoComplete="off"
-                placeholder={keyLabel === "密码" ? "该 IMAP 账号的密码" : "服务商提供的 API Key"}
+                placeholder={
+                  type === "cloudmail"
+                    ? "Cloud Mail 登录密码"
+                    : keyLabel === "密码"
+                      ? "该 IMAP 账号的密码"
+                      : "服务商提供的 API Key"
+                }
                 disabled={submitting}
               />
             )}
@@ -305,12 +311,12 @@ function CreateProviderModal({
 
         {has("domain") ? (
           <label className="field">
-            <span className="field-label">catch-all 域名</span>
+            <span className="field-label">{type === "cloudmail" ? "收信域名（可选，多个用逗号分隔）" : "catch-all 域名"}</span>
             <input
               className="input"
               value={domain}
               onChange={(event) => setDomain(event.target.value)}
-              placeholder="example.com"
+              placeholder={type === "cloudmail" ? "a.com,b.com（留空则用登录邮箱所在域）" : "example.com"}
               autoComplete="off"
               disabled={submitting}
             />
@@ -362,6 +368,11 @@ function CreateProviderModal({
         {selected?.type === "cfmail" ? (
           <p className="field-note">
             需先在 Cloudflare 部署 Email Routing + 收信 Worker（见仓库 <code>cloudflare/</code> 目录）：BaseURL 填 Worker 地址，API Key 填 Worker 的 API_TOKEN；「域名」可填多个收信域，用逗号分隔。
+          </p>
+        ) : null}
+        {selected?.type === "cloudmail" ? (
+          <p className="field-note">
+            对接 Cloud Mail（如 dreamhunter2333/cloudflare_temp_email）的用户态 API：BaseURL 填服务地址，登录邮箱/密码用于换取 token；「收信域名」可留空（默认用登录邮箱所在域），填多个用逗号分隔。生成时会自动在远端建地址。
           </p>
         ) : null}
         {selected?.type === "yyds" ? (

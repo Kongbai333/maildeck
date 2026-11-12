@@ -1287,12 +1287,292 @@ const cfmailAdapter: DomainMailAdapter = {
   }
 };
 
+// ───────────── Cloud Mail API 域名邮箱（参考 TGBOT app/mail/cloudmail.py） ─────────────
+// 对接 dreamhunter2333/cloudflare_temp_email 这类「Cloud Mail」用户态 API：
+//   POST /api/login {email,password} -> data.token（裸 JWT，authorization 头直接放 token）
+//   GET  /api/account/list · POST /api/account/add · GET /api/email/list?accountId=
+// provider：baseUrl=Cloud Mail 地址；meta.user=登录邮箱；apiKey=登录密码；meta.domain=收信域（可逗号多域）。
+
+const cloudmailTokenCache = new Map<string, { token: string; expiresAt: number }>();
+
+function cloudmailBase(config: DomainProviderConfig): string {
+  let base = config.baseUrl.trim().replace(/\/+$/u, "");
+  if (base.endsWith("/api")) {
+    base = base.slice(0, -4);
+  }
+  return base;
+}
+
+function cloudmailDomains(config: DomainProviderConfig): string[] {
+  const extra = (config.meta?.domain ?? "")
+    .split(/[,;\s]+/u)
+    .map((item) => item.trim().toLowerCase().replace(/^@/u, ""))
+    .filter(Boolean);
+  if (extra.length > 0) {
+    return Array.from(new Set(extra));
+  }
+  const login = (config.meta?.user ?? "").trim().toLowerCase();
+  const domain = login.includes("@") ? login.split("@")[1] ?? "" : "";
+  return domain ? [domain] : [];
+}
+
+function cloudmailHeaders(config: DomainProviderConfig, token?: string): Headers {
+  const base = cloudmailBase(config);
+  const headers = new Headers();
+  headers.set("accept", "application/json");
+  headers.set("content-type", "application/json");
+  headers.set("user-agent", "Mozilla/5.0 MailDeck/0.4");
+  if (base) {
+    headers.set("origin", base);
+    headers.set("referer", `${base}/login`);
+  }
+  if (token) {
+    headers.set("authorization", token);
+  }
+  return headers;
+}
+
+async function cloudmailParse(response: Response): Promise<unknown> {
+  let data: unknown = null;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`Cloud Mail 返回非 JSON（HTTP ${response.status}）`);
+  }
+  const record = asRecord(data);
+  if (response.status >= 400 || record.code !== 200) {
+    throw new Error(readString(record, "message", "error") || `Cloud Mail 请求失败（HTTP ${response.status}）`);
+  }
+  return record.data;
+}
+
+async function cloudmailLogin(config: DomainProviderConfig): Promise<string> {
+  const base = cloudmailBase(config);
+  const email = (config.meta?.user ?? "").trim();
+  const password = config.apiKey;
+  if (!base || !email || !password) {
+    throw new Error("Cloud Mail 需要配置 API 地址、登录邮箱和密码");
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${base}/api/login`, {
+      method: "POST",
+      headers: cloudmailHeaders(config),
+      body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(20_000)
+    });
+  } catch (error) {
+    throw new Error(`无法连接 Cloud Mail：${error instanceof Error ? error.message : String(error)}`);
+  }
+  const data = asRecord(await cloudmailParse(response));
+  const token = readString(data, "token");
+  if (!token) {
+    throw new Error("Cloud Mail 登录响应缺少 token");
+  }
+  cloudmailTokenCache.set(`${base}\n${email}\n${password}`, { token, expiresAt: Date.now() + 60 * 60 * 1000 });
+  return token;
+}
+
+async function cloudmailToken(config: DomainProviderConfig, force = false): Promise<string> {
+  const base = cloudmailBase(config);
+  const email = (config.meta?.user ?? "").trim();
+  const key = `${base}\n${email}\n${config.apiKey}`;
+  const cached = cloudmailTokenCache.get(key);
+  if (!force && cached && cached.expiresAt > Date.now()) {
+    return cached.token;
+  }
+  return cloudmailLogin(config);
+}
+
+async function cloudmailRequest(
+  config: DomainProviderConfig,
+  path: string,
+  init: RequestInit = {},
+  retried = false
+): Promise<unknown> {
+  const base = cloudmailBase(config);
+  if (!base) {
+    throw new Error("Cloud Mail 缺少 API 地址");
+  }
+  const token = await cloudmailToken(config);
+  let response: Response;
+  try {
+    response = await fetch(`${base}${path}`, {
+      ...init,
+      headers: cloudmailHeaders(config, token),
+      signal: AbortSignal.timeout(20_000)
+    });
+  } catch (error) {
+    throw new Error(`无法连接 Cloud Mail：${error instanceof Error ? error.message : String(error)}`);
+  }
+  let payload: unknown = null;
+  let raw: Record<string, unknown> = {};
+  try {
+    payload = await response.json();
+    raw = asRecord(payload);
+  } catch {
+    throw new Error(`Cloud Mail 返回非 JSON（HTTP ${response.status}）`);
+  }
+  if (Number(raw.code) === 401 && !retried) {
+    cloudmailTokenCache.clear();
+    return cloudmailRequest(config, path, init, true);
+  }
+  if (response.status >= 400 || Number(raw.code) !== 200) {
+    throw new Error(readString(raw, "message", "error") || `Cloud Mail 请求失败（HTTP ${response.status}）`);
+  }
+  return raw.data;
+}
+
+async function cloudmailFindAccountId(config: DomainProviderConfig, email: string): Promise<number> {
+  const target = email.trim().toLowerCase();
+  let cursor = 0;
+  let lastSort = 9_999_999_999;
+  for (let page = 0; page < 200; page += 1) {
+    const data = await cloudmailRequest(
+      config,
+      `/api/account/list?size=30&accountId=${cursor}&lastSort=${lastSort}`
+    );
+    const rows = Array.isArray(data) ? data : Array.isArray(asRecord(data).list) ? (asRecord(data).list as unknown[]) : [];
+    if (rows.length === 0) {
+      break;
+    }
+    for (const item of rows) {
+      const row = asRecord(item);
+      if (readString(row, "email").toLowerCase() === target) {
+        return Number(row.accountId);
+      }
+    }
+    if (rows.length < 30) {
+      break;
+    }
+    const last = asRecord(rows[rows.length - 1]);
+    const nextCursor = Number(last.accountId);
+    const nextSort = Number(last.sort ?? 0);
+    if (nextCursor === cursor && nextSort === lastSort) {
+      break;
+    }
+    cursor = nextCursor;
+    lastSort = nextSort;
+  }
+  throw new Error(`Cloud Mail 下没有该地址：${email}`);
+}
+
+function cloudmailSummary(row: Record<string, unknown>): ReturnType<typeof normalizeSummary> {
+  const content = readString(row, "content");
+  const text = readString(row, "text");
+  return normalizeSummary({
+    id: row.emailId,
+    subject: row.subject,
+    from: readString(row, "fromEmail", "sendEmail", "sender", "from"),
+    timestamp: row.createTime,
+    intro: (text || content.replace(/<[^>]+>/gu, " ")).slice(0, 240),
+    has_attachments: false
+  });
+}
+
+const cloudmailAdapter: DomainMailAdapter = {
+  type: "cloudmail",
+  label: "Cloud Mail（域名邮箱 API）",
+  shortLabel: "CloudMail",
+  kind: "domain",
+  defaultBaseUrl: "",
+  requiresKey: true,
+  configFields: ["baseUrl", "user", "apiKey", "domain"],
+  supportsImport: false,
+  supportsGenerate: true,
+
+  async listDomains(config) {
+    return cloudmailDomains(config).map((domain) => ({ domain, wildcard: true }));
+  },
+
+  async generateEmail(config, options) {
+    const domains = cloudmailDomains(config);
+    if (domains.length === 0) {
+      throw new Error("Cloud Mail 未配置收信域名（可在服务商「域名」里填，或用登录邮箱所在域）");
+    }
+    const preferred = options.domain?.trim().toLowerCase().replace(/^@/u, "");
+    const domain = preferred && domains.includes(preferred) ? preferred : domains[0];
+    const prefix = (options.prefix?.trim() || cfmailRandomLocal()).toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(prefix)) {
+      throw new Error("邮箱前缀只能用 a-z0-9._-（以字母数字开头，最长 64）");
+    }
+    const email = `${prefix}@${domain}`;
+    try {
+      await cloudmailRequest(config, "/api/account/add", { method: "POST", body: JSON.stringify({ email }) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/已注册|已存在|already|exist/iu.test(message)) {
+        throw error;
+      }
+    }
+    return { email };
+  },
+
+  async listMessages(config, email) {
+    const accountId = await cloudmailFindAccountId(config, email);
+    const query = new URLSearchParams({
+      accountId: String(accountId),
+      type: "0",
+      size: "50",
+      emailId: "0",
+      timeSort: "0",
+      full: "1",
+      allReceive: "0"
+    });
+    const data = asRecord(await cloudmailRequest(config, `/api/email/list?${query.toString()}`));
+    const rows = Array.isArray(data.list) ? data.list : [];
+    return rows
+      .map((item) => cloudmailSummary(asRecord(item)))
+      .filter((message) => message.id)
+      .sort((left, right) => Number(right.id) - Number(left.id));
+  },
+
+  async getMessage(config, email, messageId) {
+    const accountId = await cloudmailFindAccountId(config, email);
+    const query = new URLSearchParams({
+      accountId: String(accountId),
+      type: "0",
+      size: "50",
+      emailId: "0",
+      timeSort: "0",
+      full: "1",
+      allReceive: "0"
+    });
+    const data = asRecord(await cloudmailRequest(config, `/api/email/list?${query.toString()}`));
+    const rows = Array.isArray(data.list) ? data.list : [];
+    const item = rows.map(asRecord).find((row) => String(row.emailId) === String(messageId));
+    if (!item) {
+      throw new Error("邮件不存在或已被清理");
+    }
+    const summary = cloudmailSummary(item);
+    const html = readString(item, "content");
+    const text = readString(item, "text");
+    const to = readString(item, "toEmail") || email;
+    return {
+      ...summary,
+      toRecipients: [{ name: "", address: to }],
+      ccRecipients: [],
+      body: { contentType: html ? "html" : "text", content: html || text },
+      attachments: []
+    };
+  },
+
+  async deleteMessage() {
+    throw new Error("Cloud Mail 后端暂不支持删除单封邮件");
+  },
+
+  async clearInbox() {
+    throw new Error("Cloud Mail 后端暂不支持清空收件箱");
+  }
+};
+
 export const DOMAIN_ADAPTERS: Record<string, DomainMailAdapter> = {
   [gptmailAdapter.type]: gptmailAdapter,
   [mailtmAdapter.type]: mailtmAdapter,
   [imapAdapter.type]: imapAdapter,
   [yydsAdapter.type]: yydsAdapter,
-  [cfmailAdapter.type]: cfmailAdapter
+  [cfmailAdapter.type]: cfmailAdapter,
+  [cloudmailAdapter.type]: cloudmailAdapter
 };
 
 export function getAdapter(type: string): DomainMailAdapter {

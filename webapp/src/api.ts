@@ -236,6 +236,13 @@ const PROVIDER_TYPE_FALLBACK: Record<string, Omit<ProviderTypeView, "type">> = {
     requiresKey: true,
     configFields: ["baseUrl", "apiKey", "domain"],
   },
+  cloudmail: {
+    label: "Cloud Mail（域名邮箱 API）",
+    kind: "domain",
+    defaultBaseUrl: "",
+    requiresKey: true,
+    configFields: ["baseUrl", "user", "apiKey", "domain"],
+  },
 };
 
 function readString(source: Record<string, unknown>, key: string): string {

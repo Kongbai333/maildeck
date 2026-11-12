@@ -107,7 +107,7 @@ function normalizeStatus(value: string | null | undefined): MailboxStatus {
 }
 
 function providerKind(providerType: string | null | undefined): MailboxKind {
-  return providerType === "imap" || providerType === "cfmail" ? "domain" : "temp";
+  return providerType === "imap" || providerType === "cfmail" || providerType === "cloudmail" ? "domain" : "temp";
 }
 
 function outlookToView(item: OutlookPoolItem): MailboxView {
@@ -506,7 +506,7 @@ function providerKindOfMailboxId(mailboxId: string): "domain" | "temp" | null {
   if (!row) {
     return null;
   }
-  return row.type === "imap" || row.type === "cfmail" ? "domain" : "temp";
+  return row.type === "imap" || row.type === "cfmail" || row.type === "cloudmail" ? "domain" : "temp";
 }
 
 export function importMailboxes(input: { providerId: string; text: string; actorId: string }): {
