@@ -10,6 +10,51 @@ declare global {
 const FLV_CDN = "https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js";
 const HLS_CDN = "https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js";
 
+/**
+ * 全局并发闸门。
+ * 浏览器对**同一个主机**最多 6 条 HTTP/1.1 连接（实测同一 CDN 上 19 路并发只有 6 路能出画面，
+ * 其余静默排队、readyState 一直是 0），所以这里把「同时拉流的总数」压到 6，
+ * 并让主播放器优先于预览抢槽位，避免预览把主播放器挤死。
+ */
+const MAX_STREAMS = 6;
+/** 0 = 主播放器（最高优先），1 = 预览 */
+export type StreamPriority = 0 | 1;
+
+let activeStreams = 0;
+const streamWaiters: Array<{ priority: StreamPriority; resolve: () => void }> = [];
+
+function makeReleaser(): () => void {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = streamWaiters.shift();
+    if (next) {
+      // 槽位直接转交，active 不变
+      next.resolve();
+    } else {
+      activeStreams = Math.max(0, activeStreams - 1);
+    }
+  };
+}
+
+async function acquireStreamSlot(priority: StreamPriority): Promise<() => void> {
+  if (activeStreams < MAX_STREAMS && streamWaiters.length === 0) {
+    activeStreams += 1;
+    return makeReleaser();
+  }
+  await new Promise<void>((resolve) => {
+    streamWaiters.push({ priority, resolve });
+    streamWaiters.sort((a, b) => a.priority - b.priority);
+  });
+  return makeReleaser();
+}
+
+/** 当前占用的流连接数（调试/展示用）。 */
+export function activeStreamCount(): number {
+  return activeStreams;
+}
+
 function loadScript(src: string, globalName: "flvjs" | "Hls"): Promise<any> {
   return new Promise((resolve, reject) => {
     if (window[globalName]) {
@@ -38,19 +83,38 @@ export interface StreamHandle {
 
 export interface AttachOptions {
   muted?: boolean;
+  /** 0 = 主播放器，1 = 预览（默认 1） */
+  priority?: StreamPriority;
+  /** 超过这个时间还没出画面就判定「卡住」，默认 12s；0 = 不检测 */
+  stallTimeoutMs?: number;
   onError?: (message: string) => void;
   onPlaying?: () => void;
 }
 
 /** 把直播流挂到 <video>，返回销毁句柄。不抛错，失败通过 onError 回调。 */
-export async function attachStream(video: HTMLVideoElement, url: string, options: AttachOptions = {}): Promise<StreamHandle> {
+export async function attachStream(
+  video: HTMLVideoElement,
+  url: string,
+  options: AttachOptions = {}
+): Promise<StreamHandle> {
+  const priority = options.priority ?? 1;
+  const release = await acquireStreamSlot(priority);
   let disposed = false;
+  let playing = false;
   let player: any = null;
   let hls: any = null;
+  let stallTimer: number | null = null;
   if (options.muted) video.muted = true;
 
   const destroy = (): void => {
+    if (disposed) {
+      return;
+    }
     disposed = true;
+    if (stallTimer !== null) {
+      window.clearTimeout(stallTimer);
+      stallTimer = null;
+    }
     try {
       player?.pause?.();
       player?.unload?.();
@@ -70,9 +134,27 @@ export async function attachStream(video: HTMLVideoElement, url: string, options
     } catch {
       /* ignore */
     }
+    release();
   };
 
-  const onPlaying = (): void => options.onPlaying?.();
+  const onPlaying = (): void => {
+    playing = true;
+    if (stallTimer !== null) {
+      window.clearTimeout(stallTimer);
+      stallTimer = null;
+    }
+    options.onPlaying?.();
+  };
+
+  const stallMs = options.stallTimeoutMs ?? 12_000;
+  if (stallMs > 0) {
+    stallTimer = window.setTimeout(() => {
+      stallTimer = null;
+      if (!disposed && !playing) {
+        options.onError?.("频道无响应（可能是同一 CDN 连接占满或该频道已下线），换一个试试");
+      }
+    }, stallMs);
+  }
 
   try {
     if (/\.flv(\?|$)/i.test(url)) {
@@ -111,7 +193,10 @@ export async function attachStream(video: HTMLVideoElement, url: string, options
       await video.play().catch(() => undefined);
     }
   } catch (error) {
-    if (!disposed) options.onError?.(error instanceof Error ? error.message : "播放失败");
+    if (!disposed) {
+      options.onError?.(error instanceof Error ? error.message : "播放失败");
+      destroy();
+    }
   }
 
   return { destroy };

@@ -4411,3 +4411,13 @@ textarea {
   .op-player-right { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; padding-top: 10px; }
   .op-switch-list { max-height: 220px; }
 }
+
+/* 预览状态标签 + 播放错误操作 */
+.op-error-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+/* 预览排队中的卡片：轻微降透明度，提示「还没轮到」 */
+.op-card-queued .op-cover { opacity: .82; }
