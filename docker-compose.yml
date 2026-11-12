@@ -1,6 +1,6 @@
 services:
   maildeck:
-    image: ghcr.io/xinghe-labs/maildeck:latest
+    image: ghcr.io/kongbai333/maildeck:latest
     # 需要本地自行构建时把上面 image 注释、启用下面 build：
     # build:
     #   context: .

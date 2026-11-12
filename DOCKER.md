@@ -7,7 +7,7 @@
 - 工作流：`.github/workflows/docker.yml`
 - 触发：推送到 `main` / `cloud-deploy` 分支、打 `v*` 标签，或手动 `workflow_dispatch`。
 - 产物：推送到 GitHub Container Registry：
-  `ghcr.io/<owner>/<repo>:latest`、`:cloud-deploy`、`:sha-xxxx` 等。
+  `ghcr.io/kongbai333/maildeck:latest`、`:main`、`:sha-xxxx` 等。
 - 权限：使用仓库自带的 `secrets.GITHUB_TOKEN`（已在 workflow 里 `packages: write`），无需额外配置。
 - 首次构建完成后，去仓库右侧 **Packages** 里把该镜像的可见性按需设为 public，或在服务器上 `docker login ghcr.io` 用带 `read:packages` 的 token 拉取。
 
