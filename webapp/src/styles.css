@@ -4421,3 +4421,16 @@ textarea {
 
 /* 预览排队中的卡片：轻微降透明度，提示「还没轮到」 */
 .op-card-queued .op-cover { opacity: .82; }
+
+/* 本地直连入口 */
+.op-local-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.op-local-row .input {
+  width: 320px;
+  max-width: 100%;
+}

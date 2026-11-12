@@ -511,6 +511,39 @@ export function OnlinePlayPage(): ReactNode {
   /** 直连不可用时的诊断提示（带具体原因，避免「点了没反应」）。 */
   const [directBlocked, setDirectBlocked] = useState<string | null>(null);
 
+  /**
+   * 本地直连入口（绕开 CF 的终极办法）：
+   * https 页面没法加载 http 流，但**跳到另一个 http 页面**是可以的（顶层导航不受混合内容限制）。
+   * 所以让用户填一次本机的局域网地址（如 http://192.168.1.10:8787），
+   * 点一下就打开那个 http 页面，视频由浏览器直连 CDN —— 零 CF 流量、零 NAS 上行。
+   */
+  const LOCAL_BASE_KEY = "maildeck.onlinePlay.localBase";
+  const [localBase, setLocalBase] = useState<string>(() => {
+    try {
+      return window.localStorage.getItem(LOCAL_BASE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [localInput, setLocalInput] = useState("");
+  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+
+  const saveLocalBase = (): void => {
+    const value = localInput.trim().replace(/\/+$/u, "");
+    if (!/^http:\/\/[\w.:[\]-]+(:\d+)?$/u.test(value)) {
+      toast.error("请填本机地址，形如 http://192.168.1.10:8787");
+      return;
+    }
+    try {
+      window.localStorage.setItem(LOCAL_BASE_KEY, value);
+    } catch {
+      /* ignore */
+    }
+    setLocalBase(value);
+    setLocalInput("");
+    window.open(`${value}/#/online-play`, "_blank", "noopener");
+  };
+
   const applyMode = useCallback((next: StreamMode): void => {
     setRuntimeStreamMode(next);
     saveMode(next);
@@ -736,6 +769,57 @@ export function OnlinePlayPage(): ReactNode {
               刷新
             </button>
           </div>
+
+          {isHttps ? (
+            <div className="alert alert-warning" role="status" style={{ margin: "0 16px 8px" }}>
+              <strong>你正通过 HTTPS（CF）访问：</strong>视频若走代理会经服务器 + CF 中转（慢，且流量翻倍）。
+              点下面的按钮跳到本机 http 地址播放，视频由浏览器<b>直连 CDN</b>，不经过 CF、不占 NAS 上行。
+              <span className="op-local-row">
+                {localBase !== "" ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => window.open(`${localBase}/#/online-play`, "_blank", "noopener")}
+                    >
+                      在本地直连播放（{localBase}）
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => {
+                        try {
+                          window.localStorage.removeItem(LOCAL_BASE_KEY);
+                        } catch {
+                          /* ignore */
+                        }
+                        setLocalBase("");
+                      }}
+                    >
+                      改地址
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      className="input"
+                      value={localInput}
+                      onChange={(event) => setLocalInput(event.target.value)}
+                      placeholder="http://192.168.1.10:8787（你 NAS 的局域网地址）"
+                      aria-label="本机局域网地址"
+                    />
+                    <button type="button" className="btn btn-primary btn-sm" onClick={saveLocalBase}>
+                      保存并打开
+                    </button>
+                  </>
+                )}
+              </span>
+              <span className="cell-muted" style={{ display: "block", marginTop: 4 }}>
+                填你 NAS 在局域网里的 IP + 映射端口（在家填 192.168.x.x；在外可用公网 IP 或 IPv6）。
+                只有这个 http 页面能直连视频流。
+              </span>
+            </div>
+          ) : null}
 
           {directBlocked !== null ? (
             <div className="alert alert-warning" role="status" style={{ margin: "0 16px 8px" }}>
