@@ -1140,11 +1140,159 @@ function yydsDetail(payload: Record<string, unknown>): DomainMessageDetail {
   };
 }
 
+// ───────────── Cloudflare 域名邮箱（Email Routing + Worker + D1，参考 TGBOT 工作区 cloudflare 方案） ─────────────
+// catch-all：任意 local@收信域 → CF Email Routing → Worker 收信入库(D1) → 本地按 Bearer 轮询 /inbox。
+// provider：baseUrl=Worker 地址；apiKey=Worker 的 API_TOKEN；meta.domain=收信域名（逗号分隔可多个）。
+
+const CF_FIRST = ["liam", "noah", "oliver", "ethan", "mia", "zoe", "lily", "chloe", "ella", "leo", "ryan", "ava", "emma", "olivia"];
+const CF_LAST = ["smith", "jones", "brown", "taylor", "wilson", "davis", "clark", "walker", "young", "king", "hill", "green", "adams", "lee", "chan"];
+
+function cfmailRandomLocal(): string {
+  const first = CF_FIRST[Math.floor(Math.random() * CF_FIRST.length)];
+  const last = CF_LAST[Math.floor(Math.random() * CF_LAST.length)];
+  const style = Math.random();
+  if (style < 0.5) return `${first}.${last}`;
+  if (style < 0.8) return `${first}${last}`;
+  return `${first}.${last}${10 + Math.floor(Math.random() * 90)}`;
+}
+
+function cfmailDomains(config: DomainProviderConfig): string[] {
+  const raw = (config.meta?.domain ?? "")
+    .split(/[,;\s]+/u)
+    .map((item) => item.trim().toLowerCase().replace(/^@/u, ""))
+    .filter(Boolean);
+  return Array.from(new Set(raw));
+}
+
+function cfmailBase(config: DomainProviderConfig): string {
+  return config.baseUrl.trim().replace(/\/+$/u, "");
+}
+
+async function cfmailRequest(
+  config: DomainProviderConfig,
+  path: string,
+  init: RequestInit = {}
+): Promise<Record<string, unknown>> {
+  const base = cfmailBase(config);
+  if (!base) {
+    throw new Error("Cloudflare 域名邮箱缺少 Worker 地址");
+  }
+  const headers = new Headers(init.headers);
+  headers.set("accept", "application/json");
+  if (config.apiKey) {
+    headers.set("authorization", `Bearer ${config.apiKey}`);
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${base}${path}`, { ...init, headers, signal: AbortSignal.timeout(20_000) });
+  } catch (error) {
+    throw new Error(`无法连接 Cloudflare 收码服务：${error instanceof Error ? error.message : String(error)}`);
+  }
+  const text = await response.text();
+  let payload: Record<string, unknown> = {};
+  if (text.trim()) {
+    try {
+      payload = asRecord(JSON.parse(text) as unknown);
+    } catch {
+      throw new Error(`Cloudflare 收码服务返回非 JSON（HTTP ${response.status}）`);
+    }
+  }
+  if (!response.ok || payload.ok === false) {
+    throw new Error(readString(payload, "error", "message") || `Cloudflare 收码服务请求失败（HTTP ${response.status}）`);
+  }
+  return payload;
+}
+
+function cfmailItems(payload: Record<string, unknown>): Array<Record<string, unknown>> {
+  return Array.isArray(payload.items) ? payload.items.map(asRecord) : [];
+}
+
+function cfmailSummary(raw: Record<string, unknown>): ReturnType<typeof normalizeSummary> {
+  return normalizeSummary({
+    id: raw.id,
+    subject: raw.subject,
+    from: raw.from_addr,
+    timestamp: raw.ts,
+    intro: typeof raw.body === "string" ? raw.body.slice(0, 240) : "",
+    has_attachments: false
+  });
+}
+
+const cfmailAdapter: DomainMailAdapter = {
+  type: "cfmail",
+  label: "Cloudflare 域名邮箱",
+  shortLabel: "CFMail",
+  kind: "domain",
+  defaultBaseUrl: "",
+  requiresKey: true,
+  configFields: ["baseUrl", "apiKey", "domain"],
+  supportsImport: false,
+  supportsGenerate: true,
+
+  async listDomains(config) {
+    return cfmailDomains(config).map((domain) => ({ domain, wildcard: true }));
+  },
+
+  async generateEmail(config, options) {
+    const domains = cfmailDomains(config);
+    if (domains.length === 0) {
+      throw new Error("Cloudflare 域名邮箱未配置收信域名");
+    }
+    const preferred = options.domain?.trim().toLowerCase().replace(/^@/u, "");
+    const domain = preferred && domains.includes(preferred) ? preferred : domains[0];
+    const prefix = (options.prefix?.trim() || cfmailRandomLocal()).toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(prefix)) {
+      throw new Error("邮箱前缀只能用 a-z0-9._-（以字母数字开头，最长 64）");
+    }
+    return { email: `${prefix}@${domain}` };
+  },
+
+  async listMessages(config, email) {
+    const query = new URLSearchParams({ alias: email.toLowerCase(), limit: "50" });
+    const payload = await cfmailRequest(config, `/inbox?${query.toString()}`);
+    return cfmailItems(payload)
+      .map(cfmailSummary)
+      .filter((message) => message.id)
+      .sort((left, right) => (right.receivedDateTime ?? "").localeCompare(left.receivedDateTime ?? ""));
+  },
+
+  async getMessage(config, email, messageId) {
+    const query = new URLSearchParams({ alias: email.toLowerCase(), limit: "100" });
+    const payload = await cfmailRequest(config, `/inbox?${query.toString()}`);
+    const item = cfmailItems(payload).find((row) => String(row.id) === String(messageId));
+    if (!item) {
+      throw new Error("邮件不存在或已被清理");
+    }
+    const summary = cfmailSummary(item);
+    const body = readString(item, "body");
+    const to = readString(item, "to_addr") || email;
+    return {
+      ...summary,
+      toRecipients: [{ name: "", address: to }],
+      ccRecipients: [],
+      body: { contentType: "text", content: body },
+      attachments: []
+    };
+  },
+
+  async deleteMessage(config, email, messageId) {
+    await cfmailRequest(config, `/message?id=${encodeURIComponent(messageId)}`, { method: "DELETE" });
+  },
+
+  async clearInbox(config, email, mailbox) {
+    const messages = await this.listMessages(config, email, mailbox);
+    for (const message of messages) {
+      await cfmailRequest(config, `/message?id=${encodeURIComponent(message.id)}`, { method: "DELETE" });
+    }
+  }
+};
+
 export const DOMAIN_ADAPTERS: Record<string, DomainMailAdapter> = {
   [gptmailAdapter.type]: gptmailAdapter,
   [mailtmAdapter.type]: mailtmAdapter,
   [imapAdapter.type]: imapAdapter,
-  [yydsAdapter.type]: yydsAdapter
+  [yydsAdapter.type]: yydsAdapter,
+  [cfmailAdapter.type]: cfmailAdapter
 };
 
 export function getAdapter(type: string): DomainMailAdapter {

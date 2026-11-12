@@ -229,6 +229,13 @@ const PROVIDER_TYPE_FALLBACK: Record<string, Omit<ProviderTypeView, "type">> = {
     requiresKey: true,
     configFields: ["baseUrl", "apiKey"],
   },
+  cfmail: {
+    label: "Cloudflare 域名邮箱",
+    kind: "domain",
+    defaultBaseUrl: "",
+    requiresKey: true,
+    configFields: ["baseUrl", "apiKey", "domain"],
+  },
 };
 
 function readString(source: Record<string, unknown>, key: string): string {

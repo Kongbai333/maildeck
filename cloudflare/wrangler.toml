@@ -1,0 +1,12 @@
+name = "maildeck-mail"
+main = "mail-service.js"
+compatibility_date = "2025-01-01"
+
+# 收信：Email Routing → 本 Worker → D1；MailDeck 服务端用 API_TOKEN 主动拉 /inbox。
+[[d1_databases]]
+binding = "DB"
+database_name = "maildeck_mail"
+database_id = "REPLACE_ME"
+
+# secrets（不要写在这里）：
+#   wrangler secret put API_TOKEN   # MailDeck 里填的 Worker API Token 必须一致

@@ -39,7 +39,7 @@ import { cx, PROVIDER_KIND_LABEL, PROVIDER_KIND_SHORT, PROVIDER_KIND_TONE } from
  * - mailtm：mail.tm 临时邮箱（免 Key 兜底）
  * 不在白名单内的类型即使后端返回也不会出现在下拉里。
  */
-const CREATE_PROVIDER_TYPES: readonly string[] = ["gptmail", "imap", "yyds", "mailtm"];
+const CREATE_PROVIDER_TYPES: readonly string[] = ["gptmail", "imap", "yyds", "mailtm", "cfmail"];
 
 const DEFAULT_FIELDS: ProviderConfigField[] = ["baseUrl", "apiKey", "keyMode"];
 
@@ -358,6 +358,11 @@ function CreateProviderModal({
         ) : null}
         {selected?.type === "gptmail" ? (
           <p className="field-note">公共 Key 由服务端自动获取并每日刷新；也可以填自己申请的 Key。</p>
+        ) : null}
+        {selected?.type === "cfmail" ? (
+          <p className="field-note">
+            需先在 Cloudflare 部署 Email Routing + 收信 Worker（见仓库 <code>cloudflare/</code> 目录）：BaseURL 填 Worker 地址，API Key 填 Worker 的 API_TOKEN；「域名」可填多个收信域，用逗号分隔。
+          </p>
         ) : null}
         {selected?.type === "yyds" ? (
           <p className="field-note">
