@@ -76,10 +76,10 @@ export function OnlinePlayPage(): ReactNode {
     setPlayers((previous) => [...previous, { id, host, channels: hosts, slot, restore: 0 }]);
     setFrontId(id);
   };
-  const changePlayer = (id: number, host: OnlineHost): void => {
+  const changePlayer = (id: number, host: OnlineHost, channels?: OnlineHost[]): void => {
     const existing = players.find((entry) => entry.id !== id && entry.host.address === host.address);
     if (existing) { focusPlayer(existing.id); return; }
-    setPlayers((previous) => previous.map((entry) => entry.id === id ? { ...entry, host } : entry));
+    setPlayers((previous) => previous.map((entry) => entry.id === id ? { ...entry, host, channels: channels ?? entry.channels } : entry));
     setFrontId(id);
   };
 
@@ -437,11 +437,11 @@ export function OnlinePlayPage(): ReactNode {
       </div>
 
       {players.map((entry, index) => (
-        <LivePlayerWindow key={entry.id} host={entry.host} channels={entry.channels} mode={mode}
+        <LivePlayerWindow key={entry.id} host={entry.host} channels={entry.channels} platforms={platforms} mode={mode}
           index={entry.slot} restoreToken={entry.restore} zIndex={70 + index + (entry.id === frontId ? players.length : 0)}
           onActivate={() => setFrontId(entry.id)}
           onClose={() => setPlayers((previous) => previous.filter((item) => item.id !== entry.id))}
-          onChange={(next) => changePlayer(entry.id, next)}
+          onChange={(next, channels) => changePlayer(entry.id, next, channels)}
         />
       ))}
     </div>

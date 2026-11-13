@@ -18,7 +18,25 @@
 .op-live-header > svg { flex-shrink: 0; color: var(--muted); }
 .op-live-header strong { flex: 1; min-width: 0; font-size: .8125rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .op-live-header .icon-btn { width: 26px; height: 26px; border-radius: 6px; }
-.op-live-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.op-live-body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(112px, 29vw, 200px); flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.op-live-player-column { min-width: 0; }
+.op-live-sidebar { display: flex; flex-direction: column; min-width: 0; min-height: 0; contain: size; border-left: 1px solid var(--border); background: var(--surface-soft); overflow: hidden; }
+.op-live-sidebar-head { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; padding: 12px 9px 10px; border-bottom: 1px solid var(--border); }
+.op-live-sidebar-head > strong { font-size: .8125rem; }
+.op-live-sidebar-head small { margin-left: 4px; font-size: .6875rem; color: var(--muted); font-weight: 400; }
+.op-live-random { width: 100%; height: 34px; padding: 0 6px; font-size: .75rem; gap: 5px; }
+.op-live-search { width: 100%; height: 32px; padding: 0 7px; font-size: .6875rem; }
+.op-live-host-list { flex: 1; min-height: 0; overflow-y: auto; padding: 5px; overscroll-behavior: contain; scrollbar-width: thin; }
+.op-live-host { display: flex; align-items: center; width: 100%; gap: 8px; min-width: 0; margin-bottom: 3px; padding: 6px; border: 1px solid transparent; border-radius: 7px; text-align: left; color: var(--text); background: transparent; cursor: pointer; }
+.op-live-host:hover { background: var(--surface); border-color: var(--border); }
+.op-live-host-active, .op-live-host-active:hover { color: var(--primary); background: var(--primary-soft); border-color: var(--border-strong); }
+.op-live-host-cover { display: grid; place-items: center; width: 34px; height: 46px; flex: 0 0 auto; border-radius: 5px; overflow: hidden; background: var(--surface); color: var(--muted); font-size: .6875rem; }
+.op-live-host-cover img { width: 100%; height: 100%; object-fit: cover; }
+.op-live-host-name { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
+.op-live-host-name strong { font-size: .75rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-live-host-name small { font-size: .625rem; }
+.op-live-host-empty { padding: 16px 4px; font-size: .75rem; text-align: center; color: var(--muted); }
+@media (max-width: 420px) { .op-live-host { gap: 5px; padding: 5px 3px; } .op-live-host-cover { width: 25px; height: 36px; } .op-live-sidebar-head { padding-inline: 6px; } }
 .op-live-window-minimized .op-live-body { display: none; }
 .op-live-window-minimized .op-live-header { border-bottom: 0; }
 .op-live-stage { position: relative; width: 100%; aspect-ratio: 9 / 16; background: #080c0a; overflow: hidden; }

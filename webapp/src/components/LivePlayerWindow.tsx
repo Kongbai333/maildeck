@@ -1,10 +1,12 @@
-import { Copy, GripVertical, Maximize2, Minus, RefreshCw, Volume2, VolumeX, X } from "lucide-react";
+import { Copy, GripVertical, Maximize2, Minus, RefreshCw, Shuffle, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { attachStream } from "../stream-player";
 import type { StreamHandle, StreamMode } from "../stream-player";
-import type { OnlineHost } from "../types";
+import type { OnlineHost, OnlinePlatform } from "../types";
+import { isAbortError, isUnauthorizedError, onlinePlayHosts } from "../api";
+import { useApiFailure } from "../session";
 import { copyText, cx } from "../utils";
 import { Spinner } from "./Spinner";
 import { useToast } from "./Toast";
@@ -12,7 +14,9 @@ import { useToast } from "./Toast";
 interface Position { x: number; y: number }
 interface Drag { pointerId: number; x: number; y: number; origin: Position }
 function playerWidth(): number {
-  return Math.min(320, Math.max(150, (window.innerHeight - 160) * 9 / 16), window.innerWidth - 24);
+  const sidebar = Math.max(112, Math.min(200, window.innerWidth * .29));
+  const video = Math.min(320, Math.max(120, (window.innerHeight - 150) * 9 / 16), Math.max(96, window.innerWidth - sidebar - 28));
+  return video + sidebar;
 }
 function initialPosition(index: number): Position {
   const width = playerWidth();
@@ -20,18 +24,24 @@ function initialPosition(index: number): Position {
   return { x: Math.max(12, window.innerWidth - 12 - width - (index % columns) * (width + 12)), y: 24 + Math.floor(index / columns) * 36 };
 }
 
-export function LivePlayerWindow({ host, channels, mode, index, zIndex, restoreToken, onClose, onActivate, onChange }: {
+export function LivePlayerWindow({ host, channels, platforms, mode, index, zIndex, restoreToken, onClose, onActivate, onChange }: {
   host: OnlineHost;
   channels: OnlineHost[];
+  platforms: OnlinePlatform[];
   mode: StreamMode;
   index: number;
   zIndex: number;
   restoreToken: number;
   onClose: () => void;
   onActivate: () => void;
-  onChange: (host: OnlineHost) => void;
+  onChange: (host: OnlineHost, channels?: OnlineHost[]) => void;
 }): ReactNode {
   const toast = useToast();
+  const handleFailure = useApiFailure();
+  const randomController = useRef<AbortController | null>(null);
+  const [randomLoading, setRandomLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const activeChannelRef = useRef<HTMLButtonElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -46,6 +56,14 @@ export function LivePlayerWindow({ host, channels, mode, index, zIndex, restoreT
   mutedRef.current = muted;
 
   useEffect(() => { setMinimized(false); }, [restoreToken]);
+  useEffect(() => () => { randomController.current?.abort(); randomController.current = null; }, []);
+  useEffect(() => {
+    randomController.current?.abort();
+    randomController.current = null;
+    setRandomLoading(false);
+    setSearch("");
+    activeChannelRef.current?.scrollIntoView({ block: "nearest" });
+  }, [host.address]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -115,6 +133,53 @@ export function LivePlayerWindow({ host, channels, mode, index, zIndex, restoreT
     if (await copyText(host.address)) toast.success("播放地址已复制"); else toast.error("复制失败");
   };
   const choices = channels.some((item) => item.address === host.address) ? channels : [host, ...channels];
+  const visibleChoices = choices.filter((item) => item.title.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  const selectChannel = (next: OnlineHost): void => {
+    randomController.current?.abort();
+    randomController.current = null;
+    setRandomLoading(false);
+    onChange(next);
+  };
+  const randomHost = async (): Promise<void> => {
+    randomController.current?.abort();
+    const controller = new AbortController();
+    randomController.current = controller;
+    setRandomLoading(true);
+    const pool = [...platforms];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const pick = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[pick]] = [pool[pick], pool[i]];
+    }
+    try {
+      for (const platform of pool) {
+        if (controller.signal.aborted) return;
+        const attempt = new AbortController();
+        const abort = (): void => attempt.abort();
+        controller.signal.addEventListener("abort", abort, { once: true });
+        const timer = window.setTimeout(abort, 8000);
+        try {
+          const list = await onlinePlayHosts(platform.address, attempt.signal);
+          if (controller.signal.aborted) return;
+          const candidates = list.filter((item) => item.address !== host.address);
+          if (candidates.length === 0) continue;
+          const next = candidates[Math.floor(Math.random() * candidates.length)];
+          onChange(next, list);
+          toast.success("随机主播：" + platform.title + " · " + next.title);
+          return;
+        } catch (cause: unknown) {
+          if (controller.signal.aborted) return;
+          if (isUnauthorizedError(cause)) { handleFailure(cause); return; }
+          if (!isAbortError(cause)) { /* Try another randomly ordered platform. */ }
+        } finally {
+          window.clearTimeout(timer);
+          controller.signal.removeEventListener("abort", abort);
+        }
+      }
+      if (!controller.signal.aborted) toast.error("暂时没有其他可选主播，请刷新后重试");
+    } finally {
+      if (randomController.current === controller) { randomController.current = null; setRandomLoading(false); }
+    }
+  };
 
   return createPortal(
     <div ref={rootRef} role="dialog" aria-label={`直播窗口：${host.title}`}
@@ -143,6 +208,7 @@ export function LivePlayerWindow({ host, channels, mode, index, zIndex, restoreT
         <button type="button" className="icon-btn icon-btn-xs" onClick={onClose} aria-label={`关闭 ${host.title}`} title="关闭窗口"><X size={16} /></button>
       </header>
       <div className="op-live-body">
+        <div className="op-live-player-column">
         <div className="op-live-stage">
           <video ref={videoRef} className="op-live-video" controls playsInline autoPlay muted={muted}
             onVolumeChange={() => { if (videoRef.current) setMuted(videoRef.current.muted); }} />
@@ -150,9 +216,7 @@ export function LivePlayerWindow({ host, channels, mode, index, zIndex, restoreT
           {error ? <div className="op-live-error" role="alert"><p>{error}</p><button type="button" className="btn btn-primary btn-sm" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={14} />重新连接</button></div> : null}
         </div>
         <footer className="op-live-controls">
-          <select className="input op-live-channel" aria-label="切换当前窗口频道" value={host.address}
-            onChange={(event) => { const next = choices.find((item) => item.address === event.target.value); if (next) onChange(next); }}
-          >{choices.map((item, itemIndex) => <option key={`${item.address}-${itemIndex}`} value={item.address}>{item.title}</option>)}</select>
+
           <div className="op-live-actions">
             <button type="button" className="btn btn-ghost btn-xs" onClick={toggleSound} title={muted ? "开启声音" : "静音"} aria-label={muted ? "开启声音" : "静音"}>
               {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}<span>{muted ? "开启声音" : "静音"}</span>
@@ -161,6 +225,27 @@ export function LivePlayerWindow({ host, channels, mode, index, zIndex, restoreT
             <button type="button" className="icon-btn icon-btn-xs" onClick={() => void copy()} title="复制地址" aria-label="复制播放地址"><Copy size={14} /></button>
           </div>
         </footer>
+        </div>
+        <aside className="op-live-sidebar" aria-label="其他主播快捷切换">
+          <div className="op-live-sidebar-head">
+            <strong>其他主播 <small>{choices.length}</small></strong>
+            <button type="button" className="btn btn-primary btn-sm op-live-random" disabled={randomLoading || platforms.length === 0}
+              onClick={() => void randomHost()} title="随机选择一个平台，再从该平台随机选择主播">
+              <Shuffle size={14} aria-hidden="true" />{randomLoading ? "随机选择中…" : "随机主播"}
+            </button>
+            <input className="input op-live-search" value={search} onChange={(event) => setSearch(event.target.value)} aria-label="搜索其他主播" placeholder="搜索主播" />
+          </div>
+          <div className="op-live-host-list">
+            {visibleChoices.map((item, itemIndex) => <button key={`${item.address}-${itemIndex}`} type="button"
+              ref={item.address === host.address ? activeChannelRef : undefined}
+              className={cx("op-live-host", item.address === host.address && "op-live-host-active")}
+              aria-pressed={item.address === host.address} onClick={() => selectChannel(item)} title={item.title}>
+              <span className="op-live-host-cover">{item.cover ? <img src={item.cover} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} /> : <span>▶</span>}</span>
+              <span className="op-live-host-name"><strong>{item.title}</strong>{item.address === host.address ? <small>正在播放</small> : null}</span>
+            </button>)}
+            {visibleChoices.length === 0 ? <p className="op-live-host-empty">没有匹配的主播</p> : null}
+          </div>
+        </aside>
       </div>
     </div>, document.body,
   );
