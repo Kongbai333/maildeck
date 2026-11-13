@@ -3,96 +3,43 @@
   "version": "0.3.1",
   "private": true,
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.13.0"
   },
   "type": "module",
-  "description": "MailDeck — 本地优先的多邮箱桌面工作台：批量导入微软账号、本地加密存储、离线读信。",
-  "main": "dist-electron/main/index.js",
+  "description": "MailDeck — 多用户网页邮箱工作台：邮箱池管理、临时邮箱、邮件阅读与直播关注。",
   "scripts": {
-    "dev": "npm run build:electron && concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "dev": "npm run dev:cloud",
     "dev:server": "tsx watch server/src/index.ts",
-    "dev:web": "vite --host 127.0.0.1",
+    "dev:web": "npm run dev:webapp",
     "dev:webapp": "vite webapp",
     "dev:cloud": "concurrently -k \"npm:dev:server\" \"npm:dev:webapp\"",
+    "start": "node dist-server/server/src/index.js",
     "start:server": "tsx server/src/index.ts",
-    "start:server:prod": "node dist-server/server/src/index.js",
-    "build:server": "tsc -p server/tsconfig.build.json",
+    "start:server:prod": "npm start",
+    "start:cloud": "npm run build && npm start",
+    "build": "npm run build:cloud",
+    "build:server": "node -e \"require('fs').rmSync('dist-server',{recursive:true,force:true})\" && tsc -p server/tsconfig.build.json",
     "build:webapp": "vite build webapp",
     "build:cloud": "npm run build:webapp && npm run build:server",
-    "start:cloud": "npm run build:cloud && node dist-server/server/src/index.js",
-    "electron:install": "node node_modules/electron/install.js && node node_modules/electron/cli.js --version",
-    "postinstall": "npm run electron:install",
-    "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-icons.ps1",
-    "clean": "node -e \"const fs=require('fs'); for (const dir of ['dist','dist-electron']) fs.rmSync(dir,{recursive:true,force:true});\"",
-    "build:electron": "node -e \"require('fs').rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p electron/tsconfig.json",
-    "build": "npm run clean && tsc -b && vite build && tsc -p electron/tsconfig.json",
-    "dist:win": "npm run electron:install && npm run icons && npm run build && electron-builder --win --x64 && npm run verify:release",
-    "dist:win:cloud": "cross-env VITE_FORCE_HTTP_API=1 npm run dist:win",
-    "release:github": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-github-release.ps1",
-    "release:github:dry": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-github-release.ps1 -AllowDirty -NoUpload",
-    "preview": "vite preview --host 127.0.0.1",
-    "start": "electron .",
-    "verify:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-release-startup.ps1",
-    "typecheck:renderer": "tsc -p tsconfig.app.json --noEmit --pretty false",
-    "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit --pretty false",
+    "clean": "node -e \"const fs=require('fs'); for(const dir of ['webapp/dist','dist-server']) fs.rmSync(dir,{recursive:true,force:true});\"",
+    "preview": "npm start",
+    "typecheck:webapp": "tsc -p webapp/tsconfig.json --noEmit --pretty false",
     "typecheck:server": "tsc -p server/tsconfig.json --noEmit --pretty false",
+    "typecheck:shared": "tsc -p shared/tsconfig.json --noEmit --pretty false",
     "typecheck:tests": "tsc -p tests/tsconfig.json --noEmit --pretty false",
-    "typecheck": "npm run typecheck:renderer && npm run typecheck:electron && npm run typecheck:server && npm run typecheck:tests",
+    "typecheck": "npm run typecheck:webapp && npm run typecheck:server && npm run typecheck:shared && npm run typecheck:tests",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run typecheck && npm run lint && npm test",
-    "audit:prod": "npm audit --omit=dev --registry=https://registry.npmjs.org/",
-    "tauri": "tauri",
-    "build:tauri:server": "npm run build:server",
-    "build:tauri:web": "cross-env VITE_FORCE_HTTP_API=1 vite build --outDir dist-tauri --emptyOutDir",
-    "prepare:tauri": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-tauri-sidecar.ps1",
-    "dev:tauri:shell": "wait-on tcp:5173 && tauri dev",
-    "dev:tauri": "npm run prepare:tauri && concurrently -k \"npm:dev:web\" \"npm:dev:tauri:shell\"",
-    "dist:tauri": "npm run build:tauri:server && npm run build:tauri:web && npm run prepare:tauri && tauri build"
-  },
-  "build": {
-    "icon": "build/icon.ico",
-    "appId": "com.maildeck.cloud",
-    "productName": "MailDeck Cloud",
-    "directories": {
-      "buildResources": "build",
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*",
-      "node_modules/**/*",
-      "package.json"
-    ],
-    "win": {
-      "icon": "build/icon.ico",
-      "target": [
-        "portable",
-        "nsis"
-      ]
-    },
-    "portable": {
-      "artifactName": "MailDeckCloud-${version}-portable.exe"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "artifactName": "MailDeckCloud-Setup-${version}.exe"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "xinghe-labs",
-      "repo": "maildeck"
-    }
+    "audit:prod": "npm audit --omit=dev --registry=https://registry.npmjs.org/"
   },
   "dependencies": {
     "@fastify/cors": "^10.1.0",
     "@fastify/static": "^10.1.10",
     "@zone-eu/mailsplit": "5.4.20",
     "dompurify": "3.4.17",
-    "electron-updater": "^6.6.4",
     "fastify": "^5.12.8",
     "imapflow": "2.10.0",
     "lucide-react": "^0.511.0",
@@ -103,17 +50,13 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@tauri-apps/api": "^2.12.4",
-    "@tauri-apps/cli": "^2.12.4",
+    "@eslint/js": "^9.39.5",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^22.15.23",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
     "@vitejs/plugin-react": "^4.5.0",
     "concurrently": "^9.2.5",
-    "cross-env": "^7.0.3",
-    "electron": "43.8.1",
-    "electron-builder": "26.15.3",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^6.1.1",
     "globals": "^16.5.0",
@@ -122,8 +65,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.71.1",
     "vite": "^6.3.5",
-    "vitest": "^4.1.10",
-    "wait-on": "^8.0.3"
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "deepmerge-ts": "8.0.1",

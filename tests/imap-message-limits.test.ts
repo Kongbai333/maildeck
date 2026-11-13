@@ -132,9 +132,9 @@ vi.mock("imapflow", async () => {
   };
 });
 
-import { getImapMessage, listImapMessages } from "../electron/main/imap-client.js";
+import { getImapMessage, listImapMessages } from "../server/mail/imap-client.js";
 
-const imapClientSource = readFileSync(new URL("../electron/main/imap-client.ts", import.meta.url), "utf8");
+const imapClientSource = readFileSync(new URL("../server/mail/imap-client.ts", import.meta.url), "utf8");
 
 beforeEach(() => {
   fakeImap.fetchQueries = [];

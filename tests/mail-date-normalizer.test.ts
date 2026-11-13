@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMailDate } from "../electron/main/mail-date-normalizer.js";
+import { normalizeMailDate } from "../server/mail/mail-date-normalizer.js";
 
 describe("mail date normalization", () => {
   it("canonicalizes valid Date instances and offset strings", () => {

@@ -5,7 +5,7 @@ import type {
   AccountView,
   ImportPreviewResult,
   ImportResult
-} from "../../electron/shared/ipc-contracts.js";
+} from "../../shared/mail-contracts.js";
 import { encryptSecret } from "./crypto.js";
 import { getDb, transaction, type AccountRow } from "./db.js";
 

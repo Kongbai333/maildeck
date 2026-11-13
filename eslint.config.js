@@ -6,17 +6,10 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   {
     ignores: [
-      "build/**",
       "coverage/**",
       "dist/**",
-      "dist-tauri/**",
-      "dist-electron/**",
       "dist-server/**",
       "node_modules/**",
-      "release/**",
-      "src-tauri/gen/**",
-      "src-tauri/resources/**",
-      "src-tauri/target/**",
       "webapp/dist/**",
       "data/**",
       "data-smoke/**"
@@ -38,7 +31,7 @@ export default tseslint.config(
       }
     },
     rules: {
-      // A dropped promise in the main process silently loses refresh, cache, and
+      // A dropped promise in the server silently loses refresh, cache, and
       // credential commits, so both of these stay errors rather than warnings.
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-misused-promises": [
@@ -68,7 +61,7 @@ export default tseslint.config(
   },
 
   {
-    files: ["src/**/*.{ts,tsx}", "webapp/src/**/*.{ts,tsx}"],
+    files: ["webapp/src/**/*.{ts,tsx}"],
     plugins: { "react-hooks": reactHooks },
     // eslint-plugin-react-hooks@6 的 flat `configs.recommended` 是数组（元素内含
     // plugins + rules），直接展开 `.rules` 会得到 undefined，导致 hooks 规则实际未启用。
@@ -84,7 +77,7 @@ export default tseslint.config(
     files: ["tests/**/*.ts"],
     rules: {
       // Tests deliberately build partial or malformed payloads to pin the
-      // runtime contracts that guard the real IPC boundary.
+      // runtime contracts that guard the HTTP and mail protocol boundaries.
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-argument": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",

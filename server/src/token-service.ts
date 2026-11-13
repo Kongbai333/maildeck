@@ -1,5 +1,5 @@
-import type { AccessTokenResult } from "../../electron/main/types.js";
-import { refreshAccessToken } from "../../electron/main/graph-client.js";
+import type { AccessTokenResult } from "../../shared/mail-contracts.js";
+import { refreshAccessToken } from "../mail/graph-client.js";
 import { getAccountRecord, updateAccountState } from "./account-service.js";
 import { decryptSecret, encryptSecret } from "./crypto.js";
 import { getDb, type AccountRow } from "./db.js";

@@ -6,7 +6,7 @@ import {
   listMailFolders,
   listMessages,
   refreshAccessToken
-} from "../electron/main/graph-client.js";
+} from "../server/mail/graph-client.js";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {

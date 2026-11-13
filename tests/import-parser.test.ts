@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAccountImport } from "../electron/main/import-parser.js";
+import { parseAccountImport } from "../shared/import-parser.js";
 
 const clientId = "9e5f94bc-e8a4-4e73-b8be-63364c29d753";
 

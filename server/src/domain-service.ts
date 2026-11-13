@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { MailMessageSummary } from "../../electron/shared/ipc-contracts.js";
+import type { MailMessageSummary } from "../../shared/mail-contracts.js";
 import { decryptSecret, encryptSecret } from "./crypto.js";
 import { getDb } from "./db.js";
 import {

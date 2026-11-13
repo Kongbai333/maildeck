@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { closeProxyDispatchers, proxiedFetchOptions } from "../electron/main/proxy-agent.js";
+import { closeProxyDispatchers, proxiedFetchOptions } from "../server/mail/proxy-agent.js";
 
 interface DispatcherCarrier {
   dispatcher?: { close: () => Promise<void> };

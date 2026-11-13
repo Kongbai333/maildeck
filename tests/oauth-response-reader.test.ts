@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   OAUTH_RESPONSE_TOO_LARGE_MESSAGE,
   readOAuthResponseText
-} from "../electron/main/oauth-response-reader.js";
+} from "../server/mail/oauth-response-reader.js";
 
 describe("bounded OAuth response reading", () => {
   it("rejects a declared response length before reading the body", async () => {

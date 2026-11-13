@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateGraphRetryDelay } from "../electron/main/graph-retry.js";
+import { calculateGraphRetryDelay } from "../server/mail/graph-retry.js";
 
 describe("Graph retry policy", () => {
   it.each([429, 502, 503, 504])("allows retry for HTTP %s", (status) => {

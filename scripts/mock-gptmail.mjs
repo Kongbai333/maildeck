@@ -98,7 +98,7 @@ const server = createServer(async (request, response) => {
   if (pathname === "/api/emails" && request.method === "GET") {
     json(response, 200, {
       success: true,
-      data: { emails: gptMessages.map(({ html_content, content, attachments, ...rest }) => rest) }
+      data: { emails: gptMessages.map(({ html_content: _html, content: _content, attachments: _attachments, ...rest }) => rest) }
     });
     return;
   }

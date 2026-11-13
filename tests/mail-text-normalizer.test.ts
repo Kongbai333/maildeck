@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMailContentType, normalizeMailText } from "../electron/main/mail-text-normalizer.js";
+import { normalizeMailContentType, normalizeMailText } from "../server/mail/mail-text-normalizer.js";
 
 describe("mail text normalizer", () => {
   it("repairs valid UTF-8 text that was decoded through Windows-1252", () => {

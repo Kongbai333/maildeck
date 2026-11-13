@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { normalizeError } from "../electron/main/error-utils.js";
-import { JobCanceledError } from "../electron/main/job-errors.js";
+import { normalizeError } from "../server/mail/error-utils.js";
+import { JobCanceledError } from "../server/mail/job-errors.js";
 
 describe("JobCanceledError", () => {
   it("normalizes cancellation without treating it as an unknown failure", () => {

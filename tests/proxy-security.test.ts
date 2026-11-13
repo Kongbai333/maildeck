@@ -4,7 +4,7 @@ import {
   formatPublicProxyUrl,
   parseProxyUrl,
   redactProxyCredentials
-} from "../electron/shared/proxy-security.js";
+} from "../shared/proxy-security.js";
 
 describe("proxy URL security", () => {
   it("treats an empty value as direct mode", () => {

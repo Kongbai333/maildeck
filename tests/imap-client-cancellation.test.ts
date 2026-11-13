@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { JobCanceledError } from "../electron/main/job-errors.js";
+import { JobCanceledError } from "../server/mail/job-errors.js";
 
 const fakeImap = vi.hoisted(() => ({
   closeCalls: 0,
@@ -43,7 +43,7 @@ vi.mock("imapflow", () => ({
   }
 }));
 
-import { listImapFolders } from "../electron/main/imap-client.js";
+import { listImapFolders } from "../server/mail/imap-client.js";
 
 async function waitFor(predicate: () => boolean) {
   for (let attempt = 0; attempt < 20; attempt += 1) {

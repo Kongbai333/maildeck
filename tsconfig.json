@@ -1,7 +1,17 @@
 {
   "files": [],
   "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./electron/tsconfig.json" }
+    {
+      "path": "./webapp/tsconfig.json"
+    },
+    {
+      "path": "./server/tsconfig.json"
+    },
+    {
+      "path": "./shared/tsconfig.json"
+    },
+    {
+      "path": "./tests/tsconfig.json"
+    }
   ]
 }

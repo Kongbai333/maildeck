@@ -5,7 +5,7 @@ FROM node:24-bookworm-slim AS build
 WORKDIR /app
 ENV NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false
 
-# 先装依赖（--ignore-scripts 避免拉取 Electron 二进制）
+# 按锁文件安装网页与服务端依赖，禁用依赖安装钩子
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 

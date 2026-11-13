@@ -17,7 +17,7 @@ async function probeStream(url) {
       signal: AbortSignal.timeout(TIMEOUT),
     });
     if (!res.ok) {
-      try { await res.body?.cancel(); } catch {}
+      try { await res.body?.cancel(); } catch { /* Stream may already be closed after the bounded probe. */ }
       return { ok: false, ms: Date.now() - t0, err: `HTTP ${res.status}` };
     }
     const reader = res.body.getReader();
@@ -27,7 +27,7 @@ async function probeStream(url) {
       if (done) break;
       got += value?.length || 0;
     }
-    try { await reader.cancel(); } catch {}
+    try { await reader.cancel(); } catch { /* Stream may already be closed after the bounded probe. */ }
     return got > 0
       ? { ok: true, ms: Date.now() - t0, got }
       : { ok: false, ms: Date.now() - t0, err: "empty body" };

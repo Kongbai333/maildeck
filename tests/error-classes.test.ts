@@ -7,14 +7,14 @@ import {
   isGraphResponseInvalidError,
   isGraphResponseTooLargeError,
   isGraphThrottledError
-} from "../electron/main/graph-errors.js";
+} from "../server/mail/graph-errors.js";
 import {
   isMailContentTooLargeError,
   isMailParseFailedError,
   MailContentTooLargeError,
   MailParseFailedError
-} from "../electron/main/mail-errors.js";
-import { isJobCanceledError, JobCanceledError } from "../electron/main/job-errors.js";
+} from "../server/mail/mail-errors.js";
+import { isJobCanceledError, JobCanceledError } from "../server/mail/job-errors.js";
 
 describe("typed error classification", () => {
   it("keeps stable names so logs and error envelopes stay greppable", () => {

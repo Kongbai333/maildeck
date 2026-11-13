@@ -1,4 +1,4 @@
-import type { AppSettings, AppSettingsUpdate } from "../../electron/shared/ipc-contracts.js";
+import type { AppSettings, AppSettingsUpdate } from "../../shared/mail-contracts.js";
 import { serverConfig } from "./config.js";
 import { getDb } from "./db.js";
 
@@ -13,10 +13,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   hotmailFallbackEnabled: false,
   autoRefreshEnabled: false,
   autoRefreshIntervalMinutes: 10,
-  refreshScope: "all",
-  autoUpdateCheckEnabled: false,
-  closeToTray: false,
-  launchAtStartup: false
+  refreshScope: "all"
 };
 
 function readStoredSettings(): Partial<AppSettings> {
@@ -27,7 +24,15 @@ function readStoredSettings(): Partial<AppSettings> {
     return {};
   }
   try {
-    return JSON.parse(row.payload) as Partial<AppSettings>;
+    const parsed = JSON.parse(row.payload) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const stored = parsed as Record<string, unknown>;
+    delete stored.autoUpdateCheckEnabled;
+    delete stored.closeToTray;
+    delete stored.launchAtStartup;
+    return stored;
   } catch {
     return {};
   }
@@ -70,10 +75,7 @@ export function updateSettings(update: AppSettingsUpdate): AppSettings {
     autoRefreshEnabled: update.autoRefreshEnabled ?? current.autoRefreshEnabled,
     autoRefreshIntervalMinutes:
       update.autoRefreshIntervalMinutes ?? current.autoRefreshIntervalMinutes,
-    refreshScope: update.refreshScope ?? current.refreshScope,
-    autoUpdateCheckEnabled: update.autoUpdateCheckEnabled ?? current.autoUpdateCheckEnabled,
-    closeToTray: update.closeToTray ?? current.closeToTray,
-    launchAtStartup: update.launchAtStartup ?? current.launchAtStartup
+    refreshScope: update.refreshScope ?? current.refreshScope
   };
 
   if (update.proxyPassword) {

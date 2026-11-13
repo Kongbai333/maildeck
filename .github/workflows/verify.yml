@@ -15,37 +15,27 @@ permissions:
 
 jobs:
   verify:
-    # The app ships for Windows only. `tests/windows-packaging.test.ts` actually
-    # executes the PowerShell packaging script on this runner instead of skipping,
-    # so the release gates are covered rather than assumed.
-    runs-on: windows-latest
-    timeout-minutes: 30
-
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          # `node:sqlite` (DatabaseSync) is required by several test files and was
-          # enabled by default starting in Node 22.13.0; 22.12.0 fails with
-          # "No such built-in module: node:sqlite".
-          node-version: "22.23.2"
+          node-version: "24"
           cache: npm
-
-      # `postinstall` downloads and verifies the pinned Electron binary.
       - name: Install dependencies
         run: npm ci
-
-      - name: Type-check renderer, main process, and tests
+      - name: Check webapp, server, shared code, and tests
         run: npm run typecheck
-
       - name: Lint
         run: npm run lint
-
       - name: Test
         run: npm test
-
-      # Refresh tokens, mail bodies, and proxy credentials all flow through these
-      # dependencies, so a production advisory must not reach a release.
-      - name: Audit shipped dependencies
-        run: npm audit --omit=dev --registry=https://registry.npmjs.org/
+      - name: Build webapp and server
+        run: npm run build
+      - name: Audit production dependencies
+        run: npm run audit:prod

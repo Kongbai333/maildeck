@@ -1,6 +1,6 @@
 import { ImapFlow, type MessageStructureObject } from "imapflow";
 import { simpleParser } from "mailparser";
-import type { MailAddress, MailMessageDetail, MailMessageSummary } from "../../electron/shared/ipc-contracts.js";
+import type { MailAddress, MailMessageDetail, MailMessageSummary } from "../../shared/mail-contracts.js";
 
 export type ProviderKind = "temp" | "domain";
 

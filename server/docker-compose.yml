@@ -2,7 +2,7 @@ services:
   maildeck:
     build:
       context: ..
-      dockerfile: server/Dockerfile
+      dockerfile: Dockerfile
     ports:
       - "8787:8787"
     environment:

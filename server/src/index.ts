@@ -8,8 +8,8 @@ import type {
   AccountInput,
   AccountUpdateInput,
   ListMessagesOptions
-} from "../../electron/shared/ipc-contracts.js";
-import { parseAccountImport } from "../../electron/main/import-parser.js";
+} from "../../shared/mail-contracts.js";
+import { parseAccountImport } from "../../shared/import-parser.js";
 import {
   deleteAccount,
   listAccounts,
@@ -430,7 +430,7 @@ export function buildServer(): FastifyInstance {
   app.get("/api/auth/device-code/state", async () => ok(getDeviceCodeState()));
   app.post("/api/auth/device-code/cancel", async () => ok(cancelDeviceCode()));
 
-  // ── 静态前端：优先 webapp/dist（新网页端），其次 dist（旧构建） ──
+  // ── 静态前端：托管 webapp/dist 网页构建产物 ──
   const webRoot = serverConfig.webRoots
     .map((candidate) => path.resolve(process.cwd(), candidate))
     .find((candidate) => existsSync(path.join(candidate, "index.html")));

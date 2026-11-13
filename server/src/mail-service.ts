@@ -14,7 +14,7 @@ import type {
   TestConnectionResult,
   TestFallbackResult,
   TestManyResult
-} from "../../electron/shared/ipc-contracts.js";
+} from "../../shared/mail-contracts.js";
 import {
   downloadAttachment as downloadGraphAttachment,
   getMessage as getGraphMessage,
@@ -22,12 +22,12 @@ import {
   listAttachments as listGraphAttachments,
   listMailFolders,
   listMessages as listGraphMessages
-} from "../../electron/main/graph-client.js";
+} from "../mail/graph-client.js";
 import {
   getImapMessage,
   listImapFolders,
   listImapMessages
-} from "../../electron/main/imap-client.js";
+} from "../mail/imap-client.js";
 import {
   getAccountRecord,
   listAccounts,

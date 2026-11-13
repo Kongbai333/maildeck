@@ -80,7 +80,7 @@ async function main() {
           if (done) break;
           got += value?.length || 0;
         }
-        try { await reader.cancel(); } catch {}
+        try { await reader.cancel(); } catch { /* Stream may already be closed after the bounded probe. */ }
       }
       return { status: res.status, ctype: res.headers.get("content-type"), got };
     });
@@ -102,7 +102,7 @@ async function main() {
             if (done) break;
             got += value?.length || 0;
           }
-          try { await reader.cancel(); } catch {}
+          try { await reader.cancel(); } catch { /* Stream may already be closed after the bounded probe. */ }
         }
         return { status: res.status, got };
       })

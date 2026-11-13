@@ -1,14 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "maildeck-domain-refresh-"));
 process.env.MAILDECK_DATA_DIR = dataDir;
 process.env.MAILDECK_MASTER_KEY = Buffer.alloc(32, 3).toString("base64");
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REFRESHED_KEY = "pk-refreshed-day-2";
 let dbModule: typeof import("../server/src/db.js");
 let domainService: typeof import("../server/src/domain-service.js");
@@ -42,18 +40,6 @@ afterAll(() => {
   vi.unstubAllGlobals();
   dbModule.closeDb();
   rmSync(dataDir, { recursive: true, force: true });
-});
-
-describe("temporary mailbox UI", () => {
-  it("keeps the generate button and row actions visible without hover", () => {
-    const css = readFileSync(path.join(repoRoot, "src", "styles.css"), "utf8");
-    const rowActions = css.match(/\.domain-mailbox-row-actions\s*\{[^}]*\}/)?.[0] ?? "";
-    expect(rowActions).not.toMatch(/opacity:\s*0\s*;/u);
-    const generateButton = css.match(
-      /\.domain-list-actions\s+\.dashboard-primary-button\s*\{[^}]*\}/u
-    )?.[0] ?? "";
-    expect(generateButton).toMatch(/opacity:\s*1/u);
-  });
 });
 
 describe("GPTMail public key lifecycle", () => {

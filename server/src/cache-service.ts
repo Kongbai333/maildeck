@@ -1,4 +1,4 @@
-import type { MailCacheStats, MailMessageDetail, MailMessageSummary } from "../../electron/shared/ipc-contracts.js";
+import type { MailCacheStats, MailMessageDetail, MailMessageSummary } from "../../shared/mail-contracts.js";
 import { getDb, transaction } from "./db.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1_000;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { calculateNetworkRetryDelay } from "../electron/main/graph-retry.js";
-import { isNetworkError } from "../electron/main/error-utils.js";
-import { RequestTimeoutError, withRequestTimeout } from "../electron/main/request-timeout.js";
+import { calculateNetworkRetryDelay } from "../server/mail/graph-retry.js";
+import { isNetworkError } from "../server/mail/error-utils.js";
+import { RequestTimeoutError, withRequestTimeout } from "../server/mail/request-timeout.js";
 
 afterEach(() => {
   vi.useRealTimers();

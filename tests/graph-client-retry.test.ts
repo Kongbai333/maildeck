@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deltaMessages, listMailFolders, refreshAccessToken } from "../electron/main/graph-client.js";
-import { JobCanceledError } from "../electron/main/job-errors.js";
-import { toIpcErrorPayload } from "../electron/main/error-utils.js";
+import { deltaMessages, listMailFolders, refreshAccessToken } from "../server/mail/graph-client.js";
+import { JobCanceledError } from "../server/mail/job-errors.js";
+import { toPublicErrorPayload } from "../server/mail/error-utils.js";
 
 function throttledResponse(retryAfter: string, requestId = "request-429") {
   return new Response(JSON.stringify({
@@ -61,7 +61,7 @@ describe("Graph throttling", () => {
     const capturedError = pending.then(() => null, (error: unknown) => error);
     await vi.runAllTimersAsync();
 
-    expect(toIpcErrorPayload(await capturedError)).toEqual({
+    expect(toPublicErrorPayload(await capturedError)).toEqual({
       code: "THROTTLED",
       message: expect.stringContaining("请求过于频繁"),
       retryable: true,

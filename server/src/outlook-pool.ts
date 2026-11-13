@@ -1,4 +1,4 @@
-import { parseAccountImport } from "../../electron/main/import-parser.js";
+import { parseAccountImport } from "../../shared/import-parser.js";
 import { deleteAccount, listAccounts, upsertAccounts } from "./account-service.js";
 import { consumeQuota, getQuotaUsage, getQuotas, getUserRow, type UserRow } from "./auth-service.js";
 import { getDb, transaction } from "./db.js";

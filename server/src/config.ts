@@ -23,11 +23,11 @@ export const serverConfig = {
   sessionTtlDays: intFromEnv("MAILDECK_SESSION_TTL_DAYS", 7),
   /** 用户释放邮箱时是否顺手清空远端收件箱（后台执行，不阻塞接口）。 */
   releaseClearsInbox: process.env.MAILDECK_RELEASE_CLEAR_INBOX !== "0",
-  /** 静态前端目录候选（相对仓库根目录），按顺序取第一个存在的。 */
-  webRoots: ["webapp/dist", "dist"],
+  /** 网页构建产物（相对仓库根目录）。 */
+  webRoots: ["webapp/dist"],
   corsOrigins: (
     process.env.MAILDECK_CORS_ORIGINS ||
-    "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174"
+    "http://127.0.0.1:5174,http://localhost:5174"
   )
     .split(",")
     .map((value) => value.trim())

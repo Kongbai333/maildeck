@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listMailFolders, refreshAccessToken } from "../electron/main/graph-client.js";
-import { refreshHotmailFallbackToken } from "../electron/main/hotmail-fallback-client.js";
-import { JobCanceledError } from "../electron/main/job-errors.js";
-import { abortReasonOf } from "../electron/main/error-utils.js";
+import { listMailFolders, refreshAccessToken } from "../server/mail/graph-client.js";
+import { JobCanceledError } from "../server/mail/job-errors.js";
+import { abortReasonOf } from "../server/mail/error-utils.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -64,13 +63,5 @@ describe("Graph network cancellation", () => {
     await expectCancellationPropagates(started, pending, controller, canceled);
   });
 
-  it("forwards cancellation into Hotmail fallback token exchange", async () => {
-    const started = deferred<AbortSignal>();
-    vi.stubGlobal("fetch", abortableFetch(started));
-    const controller = new AbortController();
-    const pending = refreshHotmailFallbackToken("client-id", "refresh-token", "", controller.signal);
-    const canceled = new JobCanceledError("刷新已取消");
 
-    await expectCancellationPropagates(started, pending, controller, canceled);
-  });
 });

@@ -1,14 +1,14 @@
 import type {
   DeviceCodeSessionView,
   DeviceCodeStateEvent
-} from "../../electron/shared/ipc-contracts.js";
+} from "../../shared/mail-contracts.js";
 import {
   DeviceCodeAuthError,
   pollDeviceCode,
   readAccountEmail,
   startDeviceCode,
   type DeviceCodeSession
-} from "../../electron/main/device-code-auth.js";
+} from "../mail/device-code-auth.js";
 
 interface ActiveDeviceCode {
   session: DeviceCodeSession;

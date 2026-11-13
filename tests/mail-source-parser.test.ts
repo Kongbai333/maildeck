@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseMailSourceContent,
   selectParsedMailContent
-} from "../electron/main/mail-source-parser.js";
+} from "../server/mail/mail-source-parser.js";
 
 function rawMessage(contentType: string, body: Buffer, transferEncoding = "8bit") {
   return Buffer.concat([

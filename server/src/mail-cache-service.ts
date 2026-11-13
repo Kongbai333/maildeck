@@ -1,4 +1,4 @@
-import type { MailMessageSummary } from "../../electron/shared/ipc-contracts.js";
+import type { MailMessageSummary } from "../../shared/mail-contracts.js";
 import { getDb } from "./db.js";
 import type { DomainMessageDetail } from "./domain-adapters.js";
 

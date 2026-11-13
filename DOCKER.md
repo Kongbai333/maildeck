@@ -1,63 +1,85 @@
-# 云部署（Docker）说明
+# Docker 部署
 
-本项目提供多阶段 `Dockerfile` 与 GitHub Actions，实现「推代码 → 自动构建镜像 → 云服务器拉取部署」。
+MailDeck 使用一个容器提供网页和 HTTP API。镜像基于 Node.js 24，在构建阶段生成网页与服务端产物，运行阶段托管网页并连接持久化数据目录。
 
-## 1. 自动构建镜像（GitHub Actions → GHCR）
+## 镜像构建与发布
 
-- 工作流：`.github/workflows/docker.yml`
-- 触发：推送到 `main` / `cloud-deploy` 分支、打 `v*` 标签，或手动 `workflow_dispatch`。
-- 产物：推送到 GitHub Container Registry：
-  `ghcr.io/kongbai333/maildeck:latest`、`:main`、`:sha-xxxx` 等。
-- 权限：使用仓库自带的 `secrets.GITHUB_TOKEN`（已在 workflow 里 `packages: write`），无需额外配置。
-- 首次构建完成后，去仓库右侧 **Packages** 里把该镜像的可见性按需设为 public，或在服务器上 `docker login ghcr.io` 用带 `read:packages` 的 token 拉取。
+[Docker 工作流](.github/workflows/docker.yml)在推送到 `main` / `cloud-deploy`、创建 `v*` 标签或手动触发时构建镜像，并发布到 GHCR：
 
-## 2. 服务器部署（docker compose）
+```text
+ghcr.io/kongbai333/maildeck:latest
+ghcr.io/kongbai333/maildeck:main
+ghcr.io/kongbai333/maildeck:sha-<提交号>
+```
+
+工作流使用仓库的 `GITHUB_TOKEN` 与 `packages: write` 权限。拉取私有镜像时，部署环境需先登录对应仓库。
+
+[Dockerfile](Dockerfile)负责安装依赖、构建 `webapp/dist` 与 `dist-server`，并将两者放入运行镜像。构建容器前无需在宿主机预先运行网页构建。
+
+## 使用 Compose 部署
+
+在仓库根目录执行，或将[Compose 配置](docker-compose.yml)和[环境变量模板](.env.docker.example)放入同一部署目录后执行：
 
 ```bash
-# 1) 取部署文件（本仓库里的 docker-compose.yml / .env.docker.example）
-mkdir -p /opt/maildeck && cd /opt/maildeck
-# 把 docker-compose.yml 放进来（或 git clone 后进入该目录）
-
-# 2) 准备环境变量（敏感信息只放本机 .env，不要提交）
 cp .env.docker.example .env
-# 生成主密钥并填入 .env 的 MAILDECK_MASTER_KEY
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-# 同时设置 MAILDECK_ADMIN_PASSWORD
+```
 
-# 3) 拉取镜像并启动
+PowerShell 对应命令为 `Copy-Item .env.docker.example .env`。编辑 `.env`，设置 `MAILDECK_MASTER_KEY`、`MAILDECK_ADMIN_PASSWORD`，按需设置管理员用户名。主密钥可用以下命令生成：
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+完成配置后：
+
+```bash
 docker compose pull
 docker compose up -d
 ```
 
-访问 `http://<服务器IP>:8787`，用 `.env` 里的管理员账号登录。
+浏览器访问 `http://<服务器IP>:8787`，使用初始化的管理员账号登录。主配置将命名卷 `maildeck-data` 挂载到容器 `/data`。
 
-> 生产建议放在 Nginx/Caddy 之后做 HTTPS 反代到 `127.0.0.1:8787`，并配置 `X-Forwarded-Proto`。
+## 本地构建镜像
 
-## 3. 本地手动构建（可选）
+在仓库根目录执行：
 
 ```bash
 docker build -t maildeck:local .
 docker run -d --name maildeck -p 8787:8787 \
-  -e MAILDECK_MASTER_KEY="<32字节base64>" \
-  -e MAILDECK_ADMIN_PASSWORD="<强密码>" \
+  --env-file .env \
   -v maildeck-data:/data \
   maildeck:local
 ```
 
-## 4. 关键环境变量
+也可按[Compose 配置](docker-compose.yml)中的注释启用本地 `build`。构建完成后，容器运行 `node dist-server/server/src/index.js`；服务端只托管 `webapp/dist`。
 
-| 变量 | 必填 | 说明 |
-|---|---|---|
-| `MAILDECK_MASTER_KEY` | ✅ | 32 字节 base64，加密账号凭据/服务商 Key。**一旦用于加密就不能随意更换**，否则旧密文无法解密。 |
-| `MAILDECK_ADMIN_PASSWORD` | ✅ | 首次启动自动创建管理员用的初始密码。 |
-| `MAILDECK_ADMIN_USERNAME` | 可选（默认 admin） | |
-| `MAILDECK_HOST` / `MAILDECK_PORT` | 可选（默认 0.0.0.0:8787） | 容器内已设好。 |
-| `MAILDECK_DATA_DIR` | 可选（默认 /data） | SQLite 与缓存目录，挂载到持久卷。 |
-| `MAILDECK_CORS_ORIGINS` | 可选 | 前后端分离跨域时才需要。 |
+## HTTPS 与反向代理
 
-## 5. 安全要点
+可使用[Caddy 配置](deploy/Caddyfile)或[Nginx 配置](deploy/nginx/maildeck.conf)转发到 MailDeck 服务端，并传递 `X-Forwarded-Proto`，使服务端按 HTTPS 场景设置会话 Cookie。
 
-- **不要提交** `.env`、`data/`、`*.db`（`.gitignore` 已排除）。
-- 生产必须显式设置 `MAILDECK_MASTER_KEY`；留空会退回内置开发用固定 key，等于明文。
-- 数据持久化在 `maildeck-data` 卷（容器内 `/data`），升级镜像前先备份该卷。
-- 镜像以非 root 用户运行；如需绑定挂载宿主目录做数据卷，请把目录属主改为 UID 10001。
+仓库另提供[HTTPS Compose 配置](docker-compose.https.yml)。使用前调整 Caddy 域名及其中的宿主机数据目录，再执行：
+
+```bash
+docker compose -f docker-compose.https.yml up -d
+```
+
+容器部署与反向代理只改变访问和托管方式，不改变现有 API、账号权限或在线播放服务端行为。
+
+## 环境变量与数据
+
+| 变量 | 说明 |
+| --- | --- |
+| `MAILDECK_MASTER_KEY` | 32 字节 base64 主密钥，用于加密账号凭据与服务商密钥；恢复原数据库时使用原密钥 |
+| `MAILDECK_ADMIN_PASSWORD` | 首次初始化管理员的密码 |
+| `MAILDECK_ADMIN_USERNAME` | 首次初始化管理员用户名，默认 `admin` |
+| `MAILDECK_HOST` / `MAILDECK_PORT` | 镜像默认 `0.0.0.0` / `8787` |
+| `MAILDECK_DATA_DIR` | 镜像默认 `/data`，用于 SQLite 和缓存 |
+| `MAILDECK_CORS_ORIGINS` | 前后端分离部署时配置允许的网页来源 |
+
+首次初始化后的账号密码由数据库管理。备份应包含持久化数据、原主密钥与部署配置；升级或迁移前安排一致性备份。`.env`、数据库和真实业务截图不应进入代码仓库或镜像构建上下文。
+
+## 容器运行身份
+
+当前镜像没有设置 `USER`，由 **root** 执行[入口脚本](docker-entrypoint.sh)。脚本创建数据目录，尝试执行 `chmod 777` 和 `chown -R 10001:10001`，然后通过 `exec` 启动服务端；它没有切换到 UID 10001。因此目录属主为 10001 不代表服务进程以该用户运行。此处描述现有部署行为，未调整容器运行策略。
+
+服务端环境变量、账号初始化和兼容 HTTP 管理接口见[服务端说明](server/README.md)。

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMessage } from "../electron/main/graph-client.js";
+import { getMessage } from "../server/mail/graph-client.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();

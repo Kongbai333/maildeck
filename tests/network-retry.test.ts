@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listMailFolders, refreshAccessToken } from "../electron/main/graph-client.js";
-import { refreshHotmailFallbackToken } from "../electron/main/hotmail-fallback-client.js";
-import { JobCanceledError } from "../electron/main/job-errors.js";
+import { listMailFolders, refreshAccessToken } from "../server/mail/graph-client.js";
+import { JobCanceledError } from "../server/mail/job-errors.js";
 
 function foldersResponse() {
   return new Response(JSON.stringify({
@@ -104,22 +103,5 @@ describe("网络错误重试（fetch reject）", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("Hotmail 兜底 token POST：网络错误重试一次后成功", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi.fn()
-      .mockRejectedValueOnce(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        access_token: "at-imap",
-        refresh_token: "rt-imap",
-        expires_in: 3600,
-        scope: "https://outlook.office.com/IMAP.AccessAsUser.All"
-      }), { status: 200, headers: { "Content-Type": "application/json" } }));
-    vi.stubGlobal("fetch", fetchMock);
 
-    const pending = refreshHotmailFallbackToken("client-id", "refresh-token");
-    await vi.advanceTimersByTimeAsync(750);
-
-    await expect(pending).resolves.toMatchObject({ accessToken: "at-imap", authMode: "imap" });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
 });

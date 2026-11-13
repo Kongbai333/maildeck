@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatErrorForLog, normalizeError, toIpcErrorPayload } from "../electron/main/error-utils.js";
-import { MailContentTooLargeError, MailParseFailedError } from "../electron/main/mail-errors.js";
-import { APP_ERROR_MESSAGE_MAX_CHARS } from "../electron/shared/ipc-contracts.js";
-import { GraphResponseInvalidError, GraphRequestError, GraphResponseTooLargeError } from "../electron/main/graph-errors.js";
+import { formatErrorForLog, normalizeError, toPublicErrorPayload } from "../server/mail/error-utils.js";
+import { MailContentTooLargeError, MailParseFailedError } from "../server/mail/mail-errors.js";
+import { APP_ERROR_MESSAGE_MAX_CHARS } from "../shared/mail-contracts.js";
+import { GraphResponseInvalidError, GraphRequestError, GraphResponseTooLargeError } from "../server/mail/graph-errors.js";
 
 describe("proxy credential redaction", () => {
-  it("redacts HTTP proxy passwords from renderer-visible errors", () => {
+  it("redacts HTTP proxy passwords from public errors", () => {
     const result = normalizeError(new Error("proxy http://alice:secret@127.0.0.1:7890 failed"));
 
     expect(result.message).toContain("alice");
@@ -66,7 +66,7 @@ describe("proxy credential redaction", () => {
     (code) => {
       const error = Object.assign(new Error("request failed"), { code });
 
-      expect(toIpcErrorPayload(error)).toMatchObject({
+      expect(toPublicErrorPayload(error)).toMatchObject({
         code: "NETWORK_ERROR",
         retryable: true
       });
@@ -76,7 +76,7 @@ describe("proxy credential redaction", () => {
   it("classifies a network error code from the cause chain", () => {
     const cause = Object.assign(new Error("dns lookup failed"), { code: "EAI_AGAIN" });
 
-    expect(toIpcErrorPayload(new Error("fetch failed", { cause }))).toMatchObject({
+    expect(toPublicErrorPayload(new Error("fetch failed", { cause }))).toMatchObject({
       code: "NETWORK_ERROR",
       retryable: true
     });
@@ -90,7 +90,7 @@ describe("proxy credential redaction", () => {
   });
 
   it("classifies oversized Graph responses without treating them as retryable", () => {
-    expect(toIpcErrorPayload(new GraphResponseTooLargeError(4 * 1024 * 1024))).toMatchObject({
+    expect(toPublicErrorPayload(new GraphResponseTooLargeError(4 * 1024 * 1024))).toMatchObject({
       code: "MAIL_TOO_LARGE",
       message: expect.stringContaining("4 MiB"),
       retryable: false
@@ -106,7 +106,7 @@ describe("proxy credential redaction", () => {
 
   it("classifies a 404 from Graph as gone-instead-of-generic", () => {
     // 实测：附件下载返回 404 时，阅读器只给「操作失败，请重试」，重试也不会好。
-    const payload = toIpcErrorPayload(new GraphRequestError(404, "Not Found", null, null));
+    const payload = toPublicErrorPayload(new GraphRequestError(404, "Not Found", null, null));
 
     expect(payload.code).toBe("GRAPH_NOT_FOUND");
     expect(payload.message).toContain("找不到这个内容");
@@ -114,14 +114,14 @@ describe("proxy credential redaction", () => {
   });
 
   it("classifies invalid Graph schemas as non-retryable parser failures", () => {
-    expect(toIpcErrorPayload(new GraphResponseInvalidError("Graph 邮件列表响应格式无效"))).toMatchObject({
+    expect(toPublicErrorPayload(new GraphResponseInvalidError("Graph 邮件列表响应格式无效"))).toMatchObject({
       code: "MAIL_PARSE_FAILED",
       retryable: false
     });
   });
 
   it("bounds long public error messages before they enter progress events", () => {
-    const payload = toIpcErrorPayload(Object.assign(new Error("x".repeat(APP_ERROR_MESSAGE_MAX_CHARS * 2)), {
+    const payload = toPublicErrorPayload(Object.assign(new Error("x".repeat(APP_ERROR_MESSAGE_MAX_CHARS * 2)), {
       code: "ETIMEDOUT"
     }));
 
@@ -141,8 +141,8 @@ describe("credential decryption failures", () => {
     expect(result.message).not.toContain("操作失败，请重试");
   });
 
-  it("keeps the actionable message when building the IPC payload", () => {
-    const payload = toIpcErrorPayload(new Error("safeStorage is unavailable in this session"));
+  it("keeps the actionable message when building the public payload", () => {
+    const payload = toPublicErrorPayload(new Error("safeStorage is unavailable in this session"));
 
     expect(payload.code).toBe("CREDENTIAL_UNREADABLE");
     expect(payload.message).toContain("编辑");

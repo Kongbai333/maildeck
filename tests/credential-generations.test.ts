@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CredentialGenerations } from "../electron/main/credential-generations.js";
+import { CredentialGenerations } from "../server/mail/credential-generations.js";
 
 describe("CredentialGenerations", () => {
   it("invalidates only the accounts whose credentials changed", () => {
