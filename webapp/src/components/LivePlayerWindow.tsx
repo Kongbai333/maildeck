@@ -1,4 +1,4 @@
-import { Copy, GripVertical, Maximize2, Minus, RefreshCw, Shuffle, Volume2, VolumeX, X } from "lucide-react";
+import { Heart, Copy, GripVertical, Maximize2, Minus, RefreshCw, Shuffle, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -24,7 +24,7 @@ function initialPosition(index: number): Position {
   return { x: Math.max(12, window.innerWidth - 12 - width - (index % columns) * (width + 12)), y: 24 + Math.floor(index / columns) * 36 };
 }
 
-export function LivePlayerWindow({ host, channels, platforms, mode, index, zIndex, restoreToken, onClose, onActivate, onChange }: {
+export function LivePlayerWindow({ host, channels, platforms, mode, index, zIndex, restoreToken, followed, followBusy, onToggleFollow, onClose, onActivate, onChange }: {
   host: OnlineHost;
   channels: OnlineHost[];
   platforms: OnlinePlatform[];
@@ -32,9 +32,12 @@ export function LivePlayerWindow({ host, channels, platforms, mode, index, zInde
   index: number;
   zIndex: number;
   restoreToken: number;
+  followed: boolean;
+  followBusy: boolean;
+  onToggleFollow: () => void;
   onClose: () => void;
   onActivate: () => void;
-  onChange: (host: OnlineHost, channels?: OnlineHost[]) => void;
+  onChange: (host: OnlineHost, channels?: OnlineHost[], platform?: OnlinePlatform) => void;
 }): ReactNode {
   const toast = useToast();
   const handleFailure = useApiFailure();
@@ -163,7 +166,7 @@ export function LivePlayerWindow({ host, channels, platforms, mode, index, zInde
           const candidates = list.filter((item) => item.address !== host.address);
           if (candidates.length === 0) continue;
           const next = candidates[Math.floor(Math.random() * candidates.length)];
-          onChange(next, list);
+          onChange(next, list, platform);
           toast.success("随机主播：" + platform.title + " · " + next.title);
           return;
         } catch (cause: unknown) {
@@ -202,6 +205,7 @@ export function LivePlayerWindow({ host, channels, platforms, mode, index, zInde
       >
         <GripVertical size={15} aria-hidden="true" />
         <strong title={host.title}>{host.title}</strong>
+        <button type="button" className={cx("icon-btn icon-btn-xs", followed && "op-follow-icon-active")} disabled={followBusy} onClick={onToggleFollow} title={followed ? "取消关注" : "关注主播"} aria-label={followed ? "取消关注当前主播" : "关注当前主播"} aria-pressed={followed}><Heart size={15} fill={followed ? "currentColor" : "none"} /></button>
         <button type="button" className="icon-btn icon-btn-xs" onClick={() => setMinimized((value) => !value)} aria-label={minimized ? "展开播放器" : "最小化播放器"} title={minimized ? "展开" : "最小化"}>
           {minimized ? <Maximize2 size={15} /> : <Minus size={15} />}
         </button>

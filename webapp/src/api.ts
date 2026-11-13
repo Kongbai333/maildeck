@@ -762,6 +762,24 @@ export function providerDomains(id: string, signal?: AbortSignal): Promise<Domai
 
 /* ---------------------------- 在线播放 ---------------------------- */
 
+export interface OnlineFollow extends OnlineHost {
+  id: string;
+  platformAddress: string;
+  platformTitle: string;
+  createdAt: string;
+}
+export type OnlineFollowInput = Omit<OnlineFollow, "id" | "createdAt">;
+export function onlinePlayFollows(signal?: AbortSignal): Promise<OnlineFollow[]> {
+  return request<OnlineFollow[]>("/api/me/online-play/follows", { signal });
+}
+export function followOnlineHost(input: OnlineFollowInput): Promise<OnlineFollow> {
+  return request<OnlineFollow>("/api/me/online-play/follows", { method: "POST", body: input });
+}
+export function unfollowOnlineHost(id: string): Promise<unknown> {
+  return request<unknown>(`/api/me/online-play/follows/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+
 export function onlinePlayPlatforms(signal?: AbortSignal): Promise<OnlinePlatform[]> {
   return request<OnlinePlatform[]>("/api/me/online-play/platforms", { signal });
 }

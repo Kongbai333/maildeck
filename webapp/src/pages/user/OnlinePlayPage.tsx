@@ -1,9 +1,11 @@
-import { Eye, EyeOff, RefreshCw, Server, Tv, Zap } from "lucide-react";
+import { Heart, Eye, EyeOff, RefreshCw, Server, Tv, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { isAbortError, isUnauthorizedError, onlinePlayHosts, onlinePlayPlatforms } from "../../api";
 import { EmptyState } from "../../components/EmptyState";
 import { OnlineHostCard } from "../../components/OnlineHostCard";
+import { FollowedHostsPanel } from "../../components/FollowedHostsPanel";
+import { followKey, useHostFollows } from "../../use-host-follows";
 import { LivePlayerWindow } from "../../components/LivePlayerWindow";
 import { previewLimits, setPreviewPlayerCount, stopAllPreviews } from "../../preview-scheduler";
 import "../../styles/online-play.css";
@@ -28,6 +30,7 @@ interface PlayerEntry {
   id: number;
   host: OnlineHost;
   channels: OnlineHost[];
+  platform: OnlinePlatform;
   slot: number;
   restore: number;
 }
@@ -40,6 +43,8 @@ export function OnlinePlayPage(): ReactNode {
   const [platformsError, setPlatformsError] = useState<string | null>(null);
   const [noPermission, setNoPermission] = useState(false);
   const [activePlatform, setActivePlatform] = useState<string | null>(null);
+  const [showFollows, setShowFollows] = useState(false);
+  const following = useHostFollows();
 
   const [hosts, setHosts] = useState<OnlineHost[]>([]);
   const [hostsLoading, setHostsLoading] = useState(false);
@@ -60,7 +65,8 @@ export function OnlinePlayPage(): ReactNode {
     setFrontId(id);
     setPlayers((previous) => previous.map((entry) => entry.id === id ? { ...entry, restore: entry.restore + 1 } : entry));
   };
-  const openPlayer = (host: OnlineHost): void => {
+  const openPlayer = (host: OnlineHost, channels: OnlineHost[] = hosts, platform: OnlinePlatform | undefined = platforms.find((item) => item.address === activePlatform)): void => {
+    if (!platform) { toast.error("平台信息尚未加载，请稍后重试"); return; }
     const existing = players.find((entry) => entry.host.address === host.address);
     if (existing) { focusPlayer(existing.id); return; }
     if (players.length >= MAX_PLAYER_WINDOWS) {
@@ -73,13 +79,13 @@ export function OnlinePlayPage(): ReactNode {
     const occupied = new Set(players.map((entry) => entry.slot));
     let slot = 0;
     while (occupied.has(slot)) slot++;
-    setPlayers((previous) => [...previous, { id, host, channels: hosts, slot, restore: 0 }]);
+    setPlayers((previous) => [...previous, { id, host, channels, platform, slot, restore: 0 }]);
     setFrontId(id);
   };
-  const changePlayer = (id: number, host: OnlineHost, channels?: OnlineHost[]): void => {
+  const changePlayer = (id: number, host: OnlineHost, channels?: OnlineHost[], platform?: OnlinePlatform): void => {
     const existing = players.find((entry) => entry.id !== id && entry.host.address === host.address);
     if (existing) { focusPlayer(existing.id); return; }
-    setPlayers((previous) => previous.map((entry) => entry.id === id ? { ...entry, host, channels: channels ?? entry.channels } : entry));
+    setPlayers((previous) => previous.map((entry) => entry.id === id ? { ...entry, host, channels: channels ?? entry.channels, platform: platform ?? entry.platform } : entry));
     setFrontId(id);
   };
 
@@ -263,6 +269,9 @@ export function OnlinePlayPage(): ReactNode {
               <RefreshCw size={16} aria-hidden="true" />
             </button>
           </div>
+          <button type="button" className={cx("op-side-item op-follows-nav", showFollows && "op-side-item-active")} onClick={() => { setShowFollows(true); setPreviewAll(false); stopAllPreviews(); }} aria-pressed={showFollows}>
+            <Heart size={18} aria-hidden="true" /><span className="op-side-title">我的关注</span><span className="op-side-count">{following.follows.length}</span>
+          </button>
           <div className="op-side-list">
             {platformsLoading && platforms.length === 0 ? (
               Array.from({ length: 10 }).map((_, index) => <Skeleton key={index} height={56} radius={10} />)
@@ -273,8 +282,8 @@ export function OnlinePlayPage(): ReactNode {
                 <button
                   key={item.address}
                   type="button"
-                  className={cx("op-side-item", activePlatform === item.address && "op-side-item-active")}
-                  onClick={() => setActivePlatform(item.address)}
+                  className={cx("op-side-item", !showFollows && activePlatform === item.address && "op-side-item-active")}
+                  onClick={() => { setShowFollows(false); setActivePlatform(item.address); }}
                   title={item.title}
                 >
                   <span className="op-side-thumb">
@@ -301,8 +310,8 @@ export function OnlinePlayPage(): ReactNode {
         <section className="card op-main">
           <div className="op-main-head">
             <div className="op-main-title">
-              <strong>{activeTitle || "主播"}</strong>
-              <span className="cell-muted"> · {hostsLoading ? "加载中…" : `${hosts.length} 个频道`}</span>
+              <strong>{showFollows ? "我的关注" : activeTitle || "主播"}</strong>
+              <span className="cell-muted"> · {showFollows ? `${following.follows.length} 位主播` : hostsLoading ? "加载中…" : `${hosts.length} 个频道`}</span>
             </div>
             <button
               type="button"
@@ -321,7 +330,7 @@ export function OnlinePlayPage(): ReactNode {
               type="button"
               className={cx("btn btn-sm", previewAll ? "btn-primary" : "btn-ghost")}
               onClick={() => setPreviewAll((v) => !v)}
-              disabled={hosts.length === 0}
+              disabled={showFollows || hosts.length === 0}
               title={`可见频道依次静音预览 5 秒后保留最后一帧（最多同时 ${previewLimits().max} 路，其余排队；再次开启可更新画面）`}
             >
               {previewAll ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
@@ -332,7 +341,7 @@ export function OnlinePlayPage(): ReactNode {
                 关闭全部窗口（{players.length}）
               </button>
             ) : null}
-            <button type="button" className="btn btn-ghost btn-sm" onClick={reload} disabled={hostsLoading}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { if (showFollows) following.reload(); else reload(); }} disabled={showFollows ? following.loading || following.busy.size > 0 : hostsLoading}>
               <RefreshCw size={15} aria-hidden="true" />
               刷新
             </button>
@@ -412,7 +421,9 @@ export function OnlinePlayPage(): ReactNode {
             </div>
           ) : null}
 
-          {hostsLoading ? (
+          {showFollows ? (
+            <FollowedHostsPanel follows={following.follows} loading={following.loading} error={following.error} busy={following.busy} onReload={following.reload} onToggle={following.toggle} onOpen={openPlayer} />
+          ) : hostsLoading ? (
             <div className="op-grid">
               {Array.from({ length: 12 }).map((_, index) => (
                 <Skeleton key={index} height={170} radius={12} />
@@ -422,15 +433,20 @@ export function OnlinePlayPage(): ReactNode {
             <EmptyState compact icon={<Tv size={22} aria-hidden="true" />} title="该平台暂无可播放频道" description="换一个平台试试，或点右上角刷新。" />
           ) : (
             <div className="op-grid">
-              {hosts.map((host, index) => (
-                <OnlineHostCard
-                  key={`${host.address}-${index}`}
-                  host={host}
-                  mode={mode}
-                  forcePreview={previewAll}
-                  onOpen={openPlayer}
-                />
-              ))}
+              {hosts.map((host, index) => {
+                const platform = platforms.find((item) => item.address === activePlatform);
+                const key = followKey(activePlatform ?? "", host.title);
+                const isFollowed = following.follows.some((item) => followKey(item.platformAddress, item.title) === key);
+                return <div className="op-host-tile" key={host.address + "-" + index}>
+                  <OnlineHostCard host={host} mode={mode} forcePreview={previewAll} onOpen={(next) => openPlayer(next)} />
+                  <button type="button" className={cx("op-follow-toggle", isFollowed && "op-follow-toggle-active")}
+                    disabled={!platform || following.loading || !!following.error || following.busy.has(key)}
+                    onClick={() => { if (platform) void following.toggle(host, platform); }}
+                    title={isFollowed ? "取消关注" : "关注主播"} aria-label={(isFollowed ? "取消关注 " : "关注主播 ") + host.title} aria-pressed={isFollowed}>
+                    <Heart size={16} fill={isFollowed ? "currentColor" : "none"} />
+                  </button>
+                </div>;
+              })}
             </div>
           )}
         </section>
@@ -438,10 +454,13 @@ export function OnlinePlayPage(): ReactNode {
 
       {players.map((entry, index) => (
         <LivePlayerWindow key={entry.id} host={entry.host} channels={entry.channels} platforms={platforms} mode={mode}
+          followed={following.follows.some((item) => followKey(item.platformAddress, item.title) === followKey(entry.platform.address, entry.host.title))}
+          followBusy={following.loading || !!following.error || following.busy.has(followKey(entry.platform.address, entry.host.title))}
+          onToggleFollow={() => void following.toggle(entry.host, entry.platform)}
           index={entry.slot} restoreToken={entry.restore} zIndex={70 + index + (entry.id === frontId ? players.length : 0)}
           onActivate={() => setFrontId(entry.id)}
           onClose={() => setPlayers((previous) => previous.filter((item) => item.id !== entry.id))}
-          onChange={(next, channels) => changePlayer(entry.id, next, channels)}
+          onChange={(next, channels, platform) => changePlayer(entry.id, next, channels, platform)}
         />
       ))}
     </div>

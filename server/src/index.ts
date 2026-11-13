@@ -65,6 +65,7 @@ import {
 import { registerAdminRoutes } from "./routes-admin.js";
 import { registerAuthRoutes } from "./routes-auth.js";
 import { registerMeRoutes } from "./routes-me.js";
+import { registerOnlinePlayFollowRoutes } from "./online-play-follows.js";
 import { getSettings, updateSettings } from "./settings-service.js";
 
 const PUBLIC_API_PATHS = new Set(["/api/health", "/api/auth/login", "/api/auth/logout"]);
@@ -203,6 +204,7 @@ export function buildServer(): FastifyInstance {
 
   registerAuthRoutes(app);
   registerMeRoutes(app);
+  registerOnlinePlayFollowRoutes(app);
   registerAdminRoutes(app);
 
   // ── 遗留接口：桌面端/旧网页使用的账号与邮件能力，仅管理员或 Bearer Token 可访问 ──
