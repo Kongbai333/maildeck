@@ -151,7 +151,10 @@ function registerAccessPolicy(app: FastifyInstance): void {
 export function buildServer(): FastifyInstance {
   const app = Fastify({
     logger: true,
-    bodyLimit: 12 * 1024 * 1024
+    bodyLimit: 12 * 1024 * 1024,
+    // Outlook/Graph message IDs can exceed the router's 100-character default.
+    // Keep a finite bound while allowing the full ID to reach the detail handler.
+    routerOptions: { maxParamLength: 4096 }
   });
 
   void app.register(cors, {
