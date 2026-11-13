@@ -14,8 +14,8 @@ export interface AssignableUsers {
 }
 
 /**
- * 拉取可分配的用户（仅普通用户），单个分配与批量分配共用同一套数据与下拉。
- * open 为 true 时才请求，关闭后不保留旧数据。
+ * 拉取可分配账号（管理员与普通用户），单个、批量和导入后分配共用。
+ * open 为 true 时请求，账号启用状态与配额仍由服务端校验。
  */
 export function useAssignableUsers(open: boolean): AssignableUsers {
   const handleFailure = useApiFailure();
@@ -29,7 +29,7 @@ export function useAssignableUsers(open: boolean): AssignableUsers {
     adminUsers(undefined, controller.signal)
       .then((list) => {
         if (controller.signal.aborted) return;
-        setUsers(list.filter((item) => item.role === "user"));
+        setUsers(list);
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted || isAbortError(cause)) return;
@@ -83,12 +83,16 @@ export function UserSelectField({
     for (const item of activeUsers) {
       list.push({
         value: item.id,
-        label: `${item.username}（已持有 ${item.mailboxCount} / ${item.mailboxQuota}）`,
+        label: `${item.username}（${item.role === "admin" ? "管理员" : "普通用户"} · 已持有 ${item.mailboxCount} / ${item.mailboxQuota}）`,
       });
     }
     if (!activeOnly) {
       for (const item of disabledUsers) {
-        list.push({ value: item.id, label: `${item.username}（已停用）` });
+        list.push({
+          value: item.id,
+          label: `${item.username}（${item.role === "admin" ? "管理员" : "普通用户"} · 已停用）`,
+          disabled: true,
+        });
       }
     }
     return list;
@@ -106,14 +110,14 @@ export function UserSelectField({
           disabled={disabled || loading}
           ariaLabel={label}
           placeholder="请选择用户"
-          emptyText="暂无普通用户"
+          emptyText="暂无可分配账号"
           options={options}
         />
       </div>
 
       {loading ? <p className="form-hint">正在加载用户列表…</p> : null}
       {!loading && visibleUsers.length === 0 ? (
-        <p className="form-hint">还没有普通用户，可先到「用户管理」新建账号。</p>
+        <p className="form-hint">暂无可用账号，可到「用户管理」启用或新建账号。</p>
       ) : null}
     </>
   );
