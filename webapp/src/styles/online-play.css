@@ -1,0 +1,37 @@
+/* Portrait previews and independent live windows. */
+.op-page .op-cover { aspect-ratio: 9 / 16; background: #0c100e; }
+.op-page .op-preview-video, .op-page .op-preview-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #0c100e; }
+.op-page .op-preview-frame { z-index: 1; opacity: 0; pointer-events: none; }
+.op-page .op-preview-frame-on { opacity: 1; }
+.op-page .op-preview-video { z-index: 2; pointer-events: none; transition: none; }
+.op-page .op-play-badge { z-index: 3; }
+.op-page .op-preview-tag { z-index: 4; max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-page .op-main-head { flex-wrap: wrap; }
+.op-page .op-main-title { flex: 1 1 160px; }
+.op-page .op-preview-help { padding: 0 16px 10px; font-size: .75rem; color: var(--muted); }
+.op-page .op-window-list { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 10px; }
+.op-page .op-window-list button { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+.op-live-window { position: fixed; display: flex; flex-direction: column; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-lg); overflow: hidden; isolation: isolate; }
+.op-live-header { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; min-height: 44px; padding: 6px 7px; background: var(--surface-soft); border-bottom: 1px solid var(--border); cursor: grab; touch-action: none; user-select: none; }
+.op-live-header:active { cursor: grabbing; }
+.op-live-header > svg { flex-shrink: 0; color: var(--muted); }
+.op-live-header strong { flex: 1; min-width: 0; font-size: .8125rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-live-header .icon-btn { width: 26px; height: 26px; border-radius: 6px; }
+.op-live-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.op-live-window-minimized .op-live-body { display: none; }
+.op-live-window-minimized .op-live-header { border-bottom: 0; }
+.op-live-stage { position: relative; width: 100%; aspect-ratio: 9 / 16; background: #080c0a; overflow: hidden; }
+.op-live-video { width: 100%; height: 100%; display: block; object-fit: contain; background: #080c0a; }
+.op-live-loading, .op-live-error { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 18px; color: #f4f7f2; text-align: center; font-size: .8125rem; background: rgba(8, 12, 10, .84); }
+.op-live-loading { pointer-events: none; }
+.op-live-error p { max-height: 50%; overflow-y: auto; overflow-wrap: anywhere; }
+.op-live-controls { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid var(--border); }
+.op-live-channel { width: 100%; min-width: 0; height: 34px; padding: 0 8px; font-size: .75rem; }
+.op-live-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.op-live-actions .btn { flex: 1; min-width: 0; padding: 0 8px; font-size: .6875rem; }
+.op-live-actions .icon-btn { width: 28px; height: 28px; }
+@media (max-height: 500px) {
+  .op-live-actions .btn > span { display: none; }
+  .op-live-channel { height: 30px; }
+}
