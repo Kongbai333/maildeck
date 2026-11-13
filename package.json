@@ -36,7 +36,7 @@
     "audit:prod": "npm audit --omit=dev --registry=https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@fastify/cors": "^10.1.0",
+    "@fastify/cors": "^11.4.1",
     "@fastify/static": "^10.1.10",
     "@zone-eu/mailsplit": "5.4.20",
     "dompurify": "3.4.17",
