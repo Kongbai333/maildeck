@@ -1,0 +1,89 @@
+/* The browser document stays fixed; workspace regions own their scrolling. */
+html { font-size: 105%; }
+html, body, #root { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
+.app-shell { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr); }
+.app-main { min-height: 0; height: 100%; overflow: hidden; }
+.topbar { position: relative; flex-shrink: 0; }
+.page { min-height: 0; overflow: hidden; padding-top: 20px; }
+.page-heading { flex-shrink: 0; margin-bottom: 18px; }
+.page-content { flex: 1 1 0; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; padding: 0 3px 3px 0; }
+.page-content > * { min-width: 0; }
+.page-footer { flex-shrink: 0; margin-top: 0; padding: 10px 0; }
+.sidebar { min-height: 0; overflow: hidden; }
+.sidebar-brand, .workspace-label, .sidebar-foot, .sidebar-note { flex-shrink: 0; }
+.sidebar-nav { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.sidebar-note { margin-top: 16px; padding-top: 0; }
+
+/* Room for the larger type without enlarging the whole page. */
+:root { --control-h: 42px; --row-height: 57px; }
+.btn-sm { height: 37px; }
+.btn-xs { height: 32px; }
+.icon-btn { width: 37px; height: 37px; }
+.icon-btn-xs { width: 32px; height: 32px; }
+.topbar-password { font-size: .75rem; }
+
+/* Management toolbars and footers stay visible while only table rows scroll. */
+.page-content > .page-stack:has(> .card > .table-wrap) { height: 100%; }
+.page-content > .page-stack > .card:has(> .table-wrap) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.page-content > .page-stack > .card:has(> .table-wrap) > :not(.table-wrap) { flex-shrink: 0; }
+.page-content > .page-stack > .card > .table-wrap { flex: 1; min-height: 0; max-height: none; overscroll-behavior: contain; }
+
+/* Desktop mail workspaces allocate the remaining height to their reading panes. */
+@media (min-width: 1351px) and (min-height: 651px) {
+  .my-mailbox-page { height: 100%; }
+  .my-mailbox-page > .card, .my-mailbox-page > .alert { flex-shrink: 0; }
+  .my-mailbox-body { flex: 1; min-height: 0; align-items: stretch; }
+  .mailbox-side { position: static; height: 100%; min-height: 0; }
+  .mailbox-side-head, .mailbox-side-filters { flex-shrink: 0; }
+  .mailbox-side-list { min-height: 0; max-height: none; }
+  .my-mailbox-main { min-height: 0; overflow: hidden; }
+  .my-mailbox-inbox-head { flex-shrink: 0; }
+  .my-mailbox-inbox { display: flex; flex: 1; min-height: 0; }
+  .my-mailbox-inbox .inbox { flex: 1; height: auto; min-height: 0; }
+}
+
+/* Channel lists scroll independently of platform navigation and page chrome. */
+@media (min-width: 1101px) and (min-height: 651px) {
+  .op-page { height: 100%; }
+  .op-layout { flex: 1; min-height: 0; align-items: stretch; }
+  .op-side { position: static; height: 100%; min-height: 0; }
+  .op-side-head { flex-shrink: 0; }
+  .op-main { min-height: 0; display: flex; flex-direction: column; }
+  .op-main > :not(.op-grid) { flex-shrink: 0; }
+  .op-grid { flex: 1; min-height: 0; overflow-y: auto; align-content: start; overscroll-behavior: contain; }
+}
+@media (max-width: 1100px) {
+  .op-side { min-height: 0; }
+}
+
+/* Login, startup errors, and overlays also keep a reachable internal scroll area. */
+.md-entry { height: 100dvh; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.boot-screen { height: 100dvh; min-height: 0; overflow-y: auto; }
+.modal { max-height: calc(100dvh - 32px); }
+.modal-header, .modal-footer { flex-shrink: 0; }
+.modal-body { min-height: 0; overscroll-behavior: contain; }
+
+@media (max-height: 800px) {
+  .sidebar-note { display: none; }
+  .sidebar { padding-top: 20px; }
+  .sidebar-brand { padding-bottom: 20px; }
+  .workspace-label { margin-bottom: 18px; }
+  .page { padding-top: 14px; }
+  .page-heading { margin-bottom: 14px; }
+}
+@media (max-width: 767px), (max-height: 650px) {
+  .page-content > .page-stack:has(> .card > .table-wrap) { height: auto; min-height: 100%; }
+  .page-content > .page-stack > .card:has(> .table-wrap) { flex: none; min-height: 360px; }
+  .page-content > .page-stack > .card > .table-wrap { max-height: 60dvh; }
+  .page-heading { margin-bottom: 14px; }
+  .page-eyebrow { margin-bottom: 5px; }
+  .page-description { margin-top: 4px; }
+  .page-footer { padding: 8px 0; }
+  .topbar-password { width: 37px; }
+}
+@media (max-height: 500px) {
+  .page-eyebrow, .page-description, .page-heading-mark { display: none; }
+  .page-heading { margin-bottom: 10px; }
+  .page-heading h1 { font-size: 1.25rem; }
+  .page-footer { display: none; }
+}

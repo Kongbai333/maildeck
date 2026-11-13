@@ -4,6 +4,8 @@ import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/Toast";
 import "./styles.css";
+import "./styles/workspace.css";
+import "./styles/viewport.css";
 import { applyTheme, readThemeMode } from "./theme";
 
 // 首帧前同步主题，避免深浅色闪烁

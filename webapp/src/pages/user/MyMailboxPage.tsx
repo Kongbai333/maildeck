@@ -320,7 +320,7 @@ export function MyMailboxPage(): ReactNode {
       <section className="card">
         <div className="toolbar mailbox-toolbar">
           <div className="toolbar-left mailbox-toolbar-title">
-            <h2>我的邮箱</h2>
+            <h1>我的邮箱</h1>
             {PROVIDER_KIND_ORDER.map((kind) => (
               <span
                 key={kind}

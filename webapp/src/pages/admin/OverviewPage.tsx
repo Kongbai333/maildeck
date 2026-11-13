@@ -25,6 +25,7 @@ import {
   PROVIDER_KIND_SHORT,
   PROVIDER_KIND_TONE,
 } from "../../utils";
+import "../../styles/entry-overview.css";
 
 /** 概览与统计合并后的自动刷新间隔 */
 const REFRESH_MS = 30_000;
@@ -46,55 +47,40 @@ function formatClock(date: Date): string {
 
 function OverviewSkeleton(): ReactNode {
   return (
-    <div className="page-stack">
-      <section className="stat-grid">
+    <div className="md-overview" role="status" aria-label="正在加载概览" aria-busy="true">
+      <div className="md-overview-toolbar"><Skeleton width={180} height={34} /></div>
+      <section className="md-overview-metrics">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div className="stat-card" key={index}>
-            <Skeleton width={48} height={48} radius={14} />
-            <div className="stat-body">
-              <Skeleton width={72} height={12} />
-              <Skeleton width={96} height={30} />
-              <Skeleton width={120} height={12} />
-            </div>
+          <div className="md-overview-metric" key={index}>
+            <Skeleton width={72} height={12} />
+            <Skeleton width={96} height={32} />
+            <Skeleton width="75%" height={12} />
           </div>
         ))}
       </section>
-      <section className="stats-mini-grid">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <div className="stats-mini-card" key={index}>
-            <Skeleton width={60} height={12} />
-            <Skeleton width={80} height={26} />
-          </div>
+      <div className="md-overview-analytics">
+        <section className="md-overview-panel">
+          <div className="md-overview-panel-head"><Skeleton width={160} height={16} /></div>
+          <div className="md-overview-chart-placeholder"><Skeleton width="100%" height={184} radius={6} /></div>
+        </section>
+        <section className="md-overview-panel">
+          <div className="md-overview-panel-head"><Skeleton width={100} height={16} /></div>
+          <TableSkeleton rows={3} columns={2} />
+        </section>
+      </div>
+      <div className="md-overview-records">
+        {[0, 1].map((index) => (
+          <section className="md-overview-panel" key={index}>
+            <div className="md-overview-panel-head"><Skeleton width={150} height={16} /></div>
+            <TableSkeleton rows={4} columns={2} />
+          </section>
         ))}
-      </section>
-      <section className="card">
-        <div className="card-head">
-          <Skeleton width={160} height={16} />
-        </div>
-        <div className="chart-skeleton">
-          {Array.from({ length: 7 }).map((_, index) => (
-            <Skeleton key={index} width="100%" height={40 + ((index * 37) % 120)} radius={8} />
-          ))}
-        </div>
-      </section>
-      <section className="card">
-        <div className="card-head">
-          <Skeleton width={180} height={16} />
-        </div>
-        <TableSkeleton rows={5} columns={3} />
-      </section>
+      </div>
     </div>
   );
 }
 
-/**
- * 概览页：原「概览」+ 原「统计」合并。
- * - 顶部 4 张数字卡：今日收信 / 近 7 天 / 累计收信 / 今日领取
- * - 三类邮箱规模小卡
- * - 近 7 天收信趋势图 + Top10 收信邮箱表
- * - 最近添加的邮箱（保留跳转邮箱池入口）
- * 每 30 秒轮询 /api/admin/stats + /api/admin/overview，页面隐藏时暂停。
- */
+/** 四项指标、收信趋势与邮箱分布、最近邮箱与收信排行。页面隐藏时暂停 30 秒轮询。 */
 export function OverviewPage({ onNavigate }: OverviewPageProps): ReactNode {
   const handleFailure = useApiFailure();
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -167,7 +153,7 @@ export function OverviewPage({ onNavigate }: OverviewPageProps): ReactNode {
 
   if (error !== null && stats === null) {
     return (
-      <div className="page-stack">
+      <div className="md-overview">
         <div className="alert alert-error" role="alert">
           {error}
         </div>
@@ -185,22 +171,21 @@ export function OverviewPage({ onNavigate }: OverviewPageProps): ReactNode {
 
   const topMailboxes = stats.topMailboxes ?? [];
   const { daily, niceMax } = chart;
+  const mailboxKinds = ["outlook", "domain", "temp"] as const;
 
   return (
-    <div className="page-stack stats-page">
-      <div className="stats-toolbar">
-        <p className="stats-updated">
-          {updatedAt !== null ? `数据更新于 ${formatClock(updatedAt)} · 每 30 秒自动刷新` : "每 30 秒自动刷新"}
-          {overview !== null ? (
-            <span className="overview-meta">
-              {"  ·  "}用户 {overview.users.total}（启用 {overview.users.active}） · 服务商 {overview.providers.total}
-              （启用 {overview.providers.enabled}）
-            </span>
-          ) : null}
-        </p>
+    <div className="md-overview">
+      <div className="md-overview-toolbar">
+        <div>
+          <p className="md-overview-welcome">欢迎回来，工作台已就绪。</p>
+          <p className="md-overview-updated">
+            <span className={cx("md-overview-sync", error !== null && "md-overview-sync-error")} aria-hidden="true" />
+            {updatedAt !== null ? `更新于 ${formatClock(updatedAt)} · 每 30 秒自动刷新` : "每 30 秒自动刷新"}
+          </p>
+        </div>
         <button type="button" className="btn btn-ghost btn-sm" onClick={reload} disabled={loading}>
           <RefreshCw size={15} aria-hidden="true" />
-          刷新
+          {loading ? "刷新中…" : "刷新数据"}
         </button>
       </div>
 
@@ -210,280 +195,182 @@ export function OverviewPage({ onNavigate }: OverviewPageProps): ReactNode {
         </div>
       ) : null}
 
-      <section className="stat-grid">
-        <article className="stat-card">
-          <span className="stat-icon stat-icon-primary">
-            <Mail size={18} aria-hidden="true" />
-          </span>
-          <div className="stat-body">
-            <span className="stat-label">今日收信</span>
-            <strong className="stat-value">{stats.messages.today}</strong>
-            <span className="stat-hint">今日 0 点至当前的收信数</span>
-          </div>
+      <section className="md-overview-metrics" aria-label="收信与领取概况">
+        <article className="md-overview-metric md-overview-metric-featured">
+          <div className="md-overview-metric-label"><span>今日收信</span><Mail size={17} aria-hidden="true" /></div>
+          <strong className="md-overview-metric-value">{stats.messages.today}<small>封</small></strong>
+          <p className="md-overview-metric-hint">今日 0 点至当前</p>
         </article>
-
-        <article className="stat-card">
-          <span className="stat-icon stat-icon-info">
-            <CalendarDays size={18} aria-hidden="true" />
-          </span>
-          <div className="stat-body">
-            <span className="stat-label">近 7 天收信</span>
-            <strong className="stat-value">{stats.messages.last7d}</strong>
-            <span className="stat-hint">含今天在内的 7 天累计</span>
-          </div>
+        <article className="md-overview-metric">
+          <div className="md-overview-metric-label"><span>近 7 天收信</span><CalendarDays size={17} aria-hidden="true" /></div>
+          <strong className="md-overview-metric-value">{stats.messages.last7d}<small>封</small></strong>
+          <p className="md-overview-metric-hint">含今天在内的 7 天累计</p>
         </article>
-
-        <article className="stat-card">
-          <span className="stat-icon stat-icon-warning">
-            <Layers size={18} aria-hidden="true" />
-          </span>
-          <div className="stat-body">
-            <span className="stat-label">累计收信</span>
-            <strong className="stat-value">{stats.messages.total}</strong>
-            <span className="stat-hint">
-              Outlook {stats.messages.byKind.outlook} · 域名 {stats.messages.byKind.domain} · 临时{" "}
-              {stats.messages.byKind.temp}
-            </span>
-          </div>
+        <article className="md-overview-metric">
+          <div className="md-overview-metric-label"><span>累计收信</span><Layers size={17} aria-hidden="true" /></div>
+          <strong className="md-overview-metric-value">{stats.messages.total}<small>封</small></strong>
+          <p className="md-overview-metric-hint">Outlook {stats.messages.byKind.outlook} · 域名 {stats.messages.byKind.domain} · 临时 {stats.messages.byKind.temp}</p>
         </article>
-
-        <article className="stat-card">
-          <span className="stat-icon stat-icon-success">
-            <UserCheck size={18} aria-hidden="true" />
-          </span>
-          <div className="stat-body">
-            <span className="stat-label">今日领取</span>
-            <strong className="stat-value">{stats.claimsToday}</strong>
-            <span className="stat-hint">普通用户今日领取的邮箱数</span>
-          </div>
+        <article className="md-overview-metric">
+          <div className="md-overview-metric-label"><span>今日领取</span><UserCheck size={17} aria-hidden="true" /></div>
+          <strong className="md-overview-metric-value">{stats.claimsToday}<small>个</small></strong>
+          <p className="md-overview-metric-hint">普通用户今日领取的邮箱</p>
         </article>
       </section>
 
-      <section className="stats-mini-grid" aria-label="邮箱总数按类型">
-        <article className="stats-mini-card">
-          <span className="stats-mini-label">
-            <Badge tone={PROVIDER_KIND_TONE.outlook}>{PROVIDER_KIND_SHORT.outlook}</Badge>
-            邮箱
-          </span>
-          <strong className="stats-mini-value">{stats.mailboxes.outlook}</strong>
-        </article>
-        <article className="stats-mini-card">
-          <span className="stats-mini-label">
-            <Badge tone={PROVIDER_KIND_TONE.domain}>{PROVIDER_KIND_SHORT.domain}</Badge>
-            邮箱
-          </span>
-          <strong className="stats-mini-value">{stats.mailboxes.domain}</strong>
-        </article>
-        <article className="stats-mini-card">
-          <span className="stats-mini-label">
-            <Badge tone={PROVIDER_KIND_TONE.temp}>{PROVIDER_KIND_SHORT.temp}</Badge>
-            邮箱
-          </span>
-          <strong className="stats-mini-value">{stats.mailboxes.temp}</strong>
-        </article>
-      </section>
-
-      <section className="card">
-        <header className="card-head">
-          <div>
-            <h2 className="card-title">
-              <TrendingUp size={17} aria-hidden="true" className="card-title-icon" />
-              近 7 天收信趋势
-            </h2>
-            <p className="card-desc">按本地日期统计，鼠标悬停柱体查看当天收信数</p>
-          </div>
-        </header>
-        <div className="chart-body">
-          {daily.length === 0 ? (
-            <div className="chart-empty cell-muted">暂无趋势数据</div>
-          ) : (
-            <>
-              <div className="chart-axis" aria-hidden="true">
-                <span>{niceMax}</span>
-                <span>{Math.round(niceMax / 2)}</span>
-                <span>0</span>
-              </div>
-              <div className="chart-plot">
-                <div className="chart-grid" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
+      <div className="md-overview-analytics">
+        <section className="md-overview-panel" aria-labelledby="md-overview-trend-title">
+          <header className="md-overview-panel-head">
+            <div>
+              <h2 id="md-overview-trend-title"><TrendingUp size={17} aria-hidden="true" />收信趋势</h2>
+              <p>近 7 天 · 按本地日期统计</p>
+            </div>
+            <span className="md-overview-panel-note">单位 / 封</span>
+          </header>
+          <div className="md-overview-chart">
+            {daily.length === 0 ? (
+              <p className="md-overview-chart-empty">暂无趋势数据</p>
+            ) : (
+              <>
+                <div className="md-overview-chart-axis" aria-hidden="true">
+                  <span>{niceMax}</span><span>{Math.round(niceMax / 2)}</span><span>0</span>
                 </div>
-                <div className="chart-bars" role="img" aria-label="近 7 天收信趋势柱状图">
-                  {daily.map((item) => {
-                    const pct = niceMax === 0 ? 0 : Math.round((item.count / niceMax) * 100);
-                    return (
-                      <div
-                        className={cx("chart-col", item.count === 0 && "chart-col-zero")}
-                        key={item.date}
-                        title={`${item.date}：${item.count} 封`}
-                      >
-                        <div className="chart-bar-track">
-                          <div className="chart-bar" style={{ height: `${Math.max(pct, 2)}%` }}>
-                            <span className="chart-value">{item.count}</span>
+                <div className="md-overview-chart-plot">
+                  <div className="md-overview-chart-grid" aria-hidden="true"><span /><span /><span /></div>
+                  <div
+                    className="md-overview-chart-bars"
+                    role="img"
+                    aria-label={`近 7 天收信趋势：${daily.map((item) => `${item.date} ${item.count} 封`).join("，")}`}
+                  >
+                    {daily.map((item) => {
+                      const pct = niceMax === 0 ? 0 : Math.round((item.count / niceMax) * 100);
+                      return (
+                        <div
+                          className={cx("md-overview-chart-col", item.count === 0 && "md-overview-chart-zero")}
+                          key={item.date}
+                          title={`${item.date}：${item.count} 封`}
+                        >
+                          <div className="md-overview-chart-track">
+                            <div className="md-overview-chart-bar" style={{ height: `${Math.max(pct, 2)}%` }}>
+                              <span className="md-overview-chart-value">{item.count}</span>
+                            </div>
                           </div>
+                          <span className="md-overview-chart-date">{formatMonthDay(item.date)}</span>
                         </div>
-                        <span className="chart-date">{formatMonthDay(item.date)}</span>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-      </section>
-
-      <section className="card">
-        <header className="card-head">
-          <div>
-            <h2 className="card-title">收信最多的邮箱 Top10</h2>
-            <p className="card-desc">点击任意行可跳转到「邮箱池」查看详情</p>
+              </>
+            )}
           </div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => onNavigate(ROUTES.adminMailboxes)}
-          >
-            前往邮箱池
-          </button>
-        </header>
-        {topMailboxes.length === 0 ? (
-          <EmptyState
-            compact
-            icon={<Mail size={22} aria-hidden="true" />}
-            title="还没有收信记录"
-            description="用户把邮箱用于注册后，收到的邮件会累计在这里。"
-            action={
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => onNavigate(ROUTES.adminMailboxes)}
-              >
-                去邮箱池
-              </button>
-            }
-          />
-        ) : (
-          <div className="table-wrap stats-table-wrap">
-            <table className="table table-stats">
-              <colgroup>
-                <col className="col-rank" />
-                <col className="col-email" />
-                <col className="col-kind" />
-                <col className="col-count" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th className="col-rank">#</th>
-                  <th className="col-email">邮箱</th>
-                  <th className="col-kind">类型</th>
-                  <th className="col-count">收信数</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topMailboxes.map((row, index) => (
-                  <tr
-                    key={`${row.kind}-${row.email}`}
-                    className="clickable-row"
+        </section>
+
+        <section className="md-overview-panel" aria-labelledby="md-overview-distribution-title">
+          <header className="md-overview-panel-head">
+            <div><h2 id="md-overview-distribution-title">邮箱分布</h2><p>已接入的三类邮箱</p></div>
+            <span className="md-overview-total">{stats.mailboxes.total}<small>个邮箱</small></span>
+          </header>
+          <div className="md-overview-distribution">
+            <div className="md-overview-distribution-bar" aria-hidden="true">
+              {mailboxKinds.map((kind) => (
+                <span
+                  key={kind}
+                  className={`md-overview-kind-${kind}`}
+                  style={{ flexGrow: stats.mailboxes[kind] }}
+                />
+              ))}
+            </div>
+            {stats.mailboxes.total === 0 ? <p className="md-overview-distribution-empty">暂无邮箱，添加后即可查看分布。</p> : null}
+            <ul className="md-overview-kind-list">
+              {mailboxKinds.map((kind) => (
+                <li key={kind}>
+                  <span className="md-overview-kind-label"><i className={`md-overview-kind-${kind}`} aria-hidden="true" />{PROVIDER_KIND_SHORT[kind]}邮箱</span>
+                  <strong>{stats.mailboxes[kind]}</strong>
+                  <span className="md-overview-kind-share">{stats.mailboxes.total > 0 ? `${Math.round((stats.mailboxes[kind] / stats.mailboxes.total) * 100)}%` : "—"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {overview !== null ? (
+            <div className="md-overview-context">
+              <span>用户 <strong>{overview.users.total}</strong><small>启用 {overview.users.active}</small></span>
+              <span>服务商 <strong>{overview.providers.total}</strong><small>启用 {overview.providers.enabled}</small></span>
+            </div>
+          ) : null}
+        </section>
+      </div>
+
+      <div className="md-overview-records">
+        <section className="md-overview-panel" aria-labelledby="md-overview-recent-title">
+          <header className="md-overview-panel-head">
+            <div><h2 id="md-overview-recent-title">最近添加</h2><p>邮箱池里最新的 6 个地址</p></div>
+            <button type="button" className="md-overview-text-link" onClick={() => onNavigate(ROUTES.adminMailboxes)}>
+              邮箱池<ArrowRight size={15} aria-hidden="true" />
+            </button>
+          </header>
+          {recent.length === 0 ? (
+            <EmptyState
+              compact
+              icon={<Inbox size={22} aria-hidden="true" />}
+              title="邮箱池还是空的"
+              description="到「邮箱池」生成或批量导入邮箱后，这里会显示最新地址。"
+              action={<button type="button" className="btn btn-primary btn-sm" onClick={() => onNavigate(ROUTES.adminMailboxes)}>去生成邮箱</button>}
+            />
+          ) : (
+            <ul className="md-overview-recent-list">
+              {recent.map((row) => (
+                <li key={row.id}>
+                  <div className="md-overview-recent-main">
+                    <span className="md-overview-address" title={row.email}>{row.email}</span>
+                    <Badge tone={MAILBOX_STATUS_TONE[row.status]}>{MAILBOX_STATUS_LABEL[row.status]}</Badge>
+                  </div>
+                  <div className="md-overview-recent-meta">
+                    <span title={row.providerName}>服务商 · {row.providerName}</span>
+                    <span title={row.assignedUsername ?? undefined}>归属 · {row.assignedUsername ?? "—"}</span>
+                    <time dateTime={row.createdAt}>创建 · {formatDateTime(row.createdAt)}</time>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="md-overview-panel" aria-labelledby="md-overview-ranking-title">
+          <header className="md-overview-panel-head">
+            <div><h2 id="md-overview-ranking-title">收信排行<span className="md-overview-heading-tag">TOP 10</span></h2><p>累计收信最多的邮箱 · 点击查看邮箱池</p></div>
+            <button type="button" className="md-overview-text-link" onClick={() => onNavigate(ROUTES.adminMailboxes)} aria-label="前往邮箱池查看收信排行">
+              <ArrowRight size={16} aria-hidden="true" />
+            </button>
+          </header>
+          {topMailboxes.length === 0 ? (
+            <EmptyState
+              compact
+              icon={<Mail size={22} aria-hidden="true" />}
+              title="还没有收信记录"
+              description="用户把邮箱用于注册后，收到的邮件会累计在这里。"
+              action={<button type="button" className="btn btn-primary btn-sm" onClick={() => onNavigate(ROUTES.adminMailboxes)}>去邮箱池</button>}
+            />
+          ) : (
+            <ol className="md-overview-ranking">
+              {topMailboxes.map((row, index) => (
+                <li key={`${row.kind}-${row.email}`}>
+                  <button
+                    type="button"
+                    className="md-overview-rank-row"
                     onClick={() => onNavigate(ROUTES.adminMailboxes)}
                     title={`查看邮箱池 · ${row.email}`}
                   >
-                    <td className="col-rank">
-                      <span className={cx("rank-badge", index < 3 && "rank-badge-top")}>{index + 1}</span>
-                    </td>
-                    <td className="col-email cell-strong" title={row.email}>
-                      {row.email}
-                    </td>
-                    <td className="col-kind">
-                      <Badge tone={PROVIDER_KIND_TONE[row.kind]}>
-                        {PROVIDER_KIND_SHORT[row.kind]}
-                      </Badge>
-                    </td>
-                    <td className="col-count stat-count">{row.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="card">
-        <header className="card-head">
-          <div>
-            <h2 className="card-title">最近添加的邮箱</h2>
-            <p className="card-desc">邮箱池里最新的 6 个地址</p>
-          </div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => onNavigate(ROUTES.adminMailboxes)}
-          >
-            前往邮箱池
-            <ArrowRight size={15} aria-hidden="true" />
-          </button>
-        </header>
-
-        {recent.length === 0 ? (
-          <EmptyState
-            icon={<Inbox size={22} aria-hidden="true" />}
-            title="邮箱池还是空的"
-            description="到「邮箱池」生成或批量导入邮箱后，这里会显示最新地址。"
-            action={
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => onNavigate(ROUTES.adminMailboxes)}
-              >
-                去生成邮箱
-              </button>
-            }
-          />
-        ) : (
-          <div className="table-wrap">
-            <table className="table table-recent">
-              <colgroup>
-                <col className="col-email" />
-                <col className="col-provider" />
-                <col className="col-status" />
-                <col className="col-owner" />
-                <col className="col-created" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th className="col-email">邮箱地址</th>
-                  <th className="col-provider">服务商</th>
-                  <th className="col-status">状态</th>
-                  <th className="col-owner">归属</th>
-                  <th className="col-created">创建时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((row) => (
-                  <tr key={row.id}>
-                    <td className="col-email cell-strong" title={row.email}>
-                      {row.email}
-                    </td>
-                    <td className="col-provider" title={row.providerName}>
-                      {row.providerName}
-                    </td>
-                    <td className="col-status">
-                      <Badge tone={MAILBOX_STATUS_TONE[row.status]}>
-                        {MAILBOX_STATUS_LABEL[row.status]}
-                      </Badge>
-                    </td>
-                    <td className="col-owner" title={row.assignedUsername ?? undefined}>
-                      {row.assignedUsername ?? "—"}
-                    </td>
-                    <td className="col-created cell-muted">{formatDateTime(row.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                    <span className={cx("md-overview-rank-number", index < 3 && "md-overview-rank-top")}>{String(index + 1).padStart(2, "0")}</span>
+                    <span className="md-overview-rank-mail"><span className="md-overview-address">{row.email}</span><Badge tone={PROVIDER_KIND_TONE[row.kind]}>{PROVIDER_KIND_SHORT[row.kind]}</Badge></span>
+                    <span className="md-overview-rank-count">{row.count}<small>封</small></span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
