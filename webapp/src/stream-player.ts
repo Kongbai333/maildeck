@@ -14,9 +14,15 @@ interface FlvPlayer {
   destroy(): void;
 }
 
+interface FlvBufferConfig {
+  autoCleanupSourceBuffer: boolean;
+  autoCleanupMaxBackwardDuration: number;
+  autoCleanupMinBackwardDuration: number;
+}
+
 interface FlvLibrary {
   isSupported(): boolean;
-  createPlayer(source: { type: "flv"; url: string; isLive: boolean; hasAudio: boolean }): FlvPlayer;
+  createPlayer(source: { type: "flv"; url: string; isLive: boolean; hasAudio: boolean }, config?: FlvBufferConfig): FlvPlayer;
   Events: { ERROR: string };
 }
 
@@ -34,8 +40,15 @@ interface HlsPlayer {
   destroy(): void;
 }
 
+interface HlsBufferConfig {
+  backBufferLength: number;
+  maxBufferLength: number;
+  maxMaxBufferLength: number;
+  maxBufferSize: number;
+}
+
 interface HlsLibrary {
-  new (): HlsPlayer;
+  new (config?: HlsBufferConfig): HlsPlayer;
   isSupported(): boolean;
   Events: { ERROR: string; MANIFEST_PARSED: string };
 }
@@ -378,6 +391,8 @@ export async function attachStream(
   let hlsErrorEvent = "";
   let hlsManifestEvent = "";
   let stallTimer: number | null = null;
+  let bufferTimer: number | null = null;
+  let flvSuspended = false;
 
   const clearStallTimer = (): void => {
     if (stallTimer !== null) window.clearTimeout(stallTimer);
@@ -401,7 +416,11 @@ export async function attachStream(
     signal?.removeEventListener("abort", destroy);
     controller.abort();
     clearStallTimer();
+    if (bufferTimer !== null) window.clearInterval(bufferTimer);
+    bufferTimer = null;
     video.removeEventListener("playing", onPlaying);
+    video.removeEventListener("pause", onVideoPause);
+    video.removeEventListener("play", onVideoPlay);
     video.removeEventListener("error", onVideoError);
     const oldPlayer = player;
     const oldHls = hls;
@@ -442,6 +461,37 @@ export async function attachStream(
     playing = true;
     clearStallTimer();
     safely(() => options.onPlaying?.());
+  };
+  const onVideoPause = (): void => {
+    if (!isCurrent() || !player || !playing || flvSuspended || video.ended) return;
+    // flv.js 的直播模式不会因 video.pause() 停止下载，且不会执行前向 lazyLoad 限制。
+    // unload 保留 MediaSource 挂载，停止拉流并清空片段；用户继续播放时重新接入直播。
+    flvSuspended = true;
+    try {
+      player.unload();
+    } catch (error) {
+      fail(error instanceof Error ? error.message : "暂停直播失败");
+    }
+  };
+  const onVideoPlay = (): void => {
+    if (!isCurrent() || !player || !flvSuspended) return;
+    const instance = player;
+    flvSuspended = false;
+    try {
+      instance.load();
+      startPlayback(() => instance.play());
+    } catch (error) {
+      fail(error instanceof Error ? error.message : "恢复直播失败");
+    }
+  };
+  const limitLiveBuffer = (): void => {
+    if (!isCurrent() || flvSuspended || video.paused || video.ended || video.buffered.length === 0) return;
+    // 后台解码或播放卡顿也可能让前向缓存持续增长；超出 30 秒就追到直播尾部。
+    safely(() => {
+      const last = video.buffered.length - 1;
+      const end = video.buffered.end(last);
+      if (end - video.currentTime > 30) video.currentTime = Math.max(video.buffered.start(last), end - 3);
+    });
   };
   const onVideoError = (): void => fail(video.error?.message || "播放出错：流不可用或格式不支持");
   const onFlvError: FlvErrorListener = (_type, detail): void => {
@@ -496,7 +546,12 @@ export async function attachStream(
         fail("当前浏览器不支持 FLV 直播");
         return handle;
       }
-      const instance = flvjs.createPlayer({ type: "flv", url: target, isLive: true, hasAudio: true });
+      // 默认保留 120～180 秒历史，多路直播会放大媒体缓存占用；只留短暂回看窗口。
+      const instance = flvjs.createPlayer({ type: "flv", url: target, isLive: true, hasAudio: true }, {
+        autoCleanupSourceBuffer: true,
+        autoCleanupMaxBackwardDuration: 30,
+        autoCleanupMinBackwardDuration: 15
+      });
       if (!isCurrent()) {
         disposeFlv(instance);
         return handle;
@@ -504,11 +559,14 @@ export async function attachStream(
       player = instance;
       flvErrorEvent = flvjs.Events.ERROR;
       instance.on(flvErrorEvent, onFlvError);
+      video.addEventListener("pause", onVideoPause);
+      video.addEventListener("play", onVideoPlay);
       if (!isCurrent()) return handle;
       instance.attachMediaElement(video);
       if (!isCurrent()) return handle;
       instance.load();
       startPlayback(() => instance.play());
+      if (isCurrent()) bufferTimer = window.setInterval(limitLiveBuffer, 5000);
     } else if (/\.m3u8(\?|$)/i.test(url) && !video.canPlayType("application/vnd.apple.mpegurl")) {
       if (!await loadScript(HLS_CDN, "Hls", controller.signal) || !isCurrent()) return handle;
       const Hls = window.Hls;
@@ -516,7 +574,13 @@ export async function attachStream(
         fail("当前浏览器不支持 HLS 直播");
         return handle;
       }
-      const instance = new Hls();
+      // HLS 默认不清理历史片段；同时限制前向缓存，避免高码率或长时间播放堆积。
+      const instance = new Hls({
+        backBufferLength: 30,
+        maxBufferLength: 15,
+        maxMaxBufferLength: 30,
+        maxBufferSize: 20 * 1024 * 1024
+      });
       if (!isCurrent()) {
         disposeHls(instance);
         return handle;
