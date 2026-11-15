@@ -42,11 +42,12 @@ export function OnlineHostCard({ host, mode, forcePreview, onOpen }: {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+    let nextFrame: HTMLCanvasElement | null = null;
     try {
       const context = canvas.getContext("2d");
       if (!context) return;
-      const scale = Math.min(1, 320 / video.videoWidth, 570 / video.videoHeight);
-      const nextFrame = document.createElement("canvas");
+      const scale = Math.min(1, 180 / video.videoWidth, 320 / video.videoHeight);
+      nextFrame = document.createElement("canvas");
       nextFrame.width = Math.max(1, Math.round(video.videoWidth * scale));
       nextFrame.height = Math.max(1, Math.round(video.videoHeight * scale));
       const nextContext = nextFrame.getContext("2d");
@@ -60,11 +61,14 @@ export function OnlineHostCard({ host, mode, forcePreview, onOpen }: {
       setHasFrame(true);
     } catch {
       // Keep the last successful snapshot, or the channel cover if there is no frame yet.
+    } finally {
+      // 临时画布不参与显示，复制后立即释放位图，避免批量截图等待 GC。
+      if (nextFrame) { nextFrame.width = 0; nextFrame.height = 0; }
     }
   }, []);
 
-  const stop = useCallback((): void => {
-    capture();
+  const stop = useCallback((keepFrame = true): void => {
+    if (keepFrame && activeRef.current) capture();
     generation.current++;
     activeRef.current = false;
     unregisterPreview(keyRef.current);
@@ -76,6 +80,12 @@ export function OnlineHostCard({ host, mode, forcePreview, onOpen }: {
     handleRef.current = null;
     releaseRef.current?.();
     releaseRef.current = null;
+    if (!keepFrame) {
+      const canvas = canvasRef.current;
+      if (canvas) { canvas.width = 0; canvas.height = 0; }
+      frameRef.current = false;
+      setHasFrame(false);
+    }
     updatePhase(frameRef.current ? "frozen" : "idle");
   }, [capture, updatePhase]);
 
@@ -134,15 +144,20 @@ export function OnlineHostCard({ host, mode, forcePreview, onOpen }: {
 
   useEffect(() => {
     completedRef.current = false;
-    if (!forcePreview || !cardRef.current) return () => stop();
+    if (!forcePreview) stop(false);
+    if (!cardRef.current) return () => stop(false);
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (entry.isIntersecting) start(false);
-        else stop();
+        if (entry.isIntersecting) {
+          if (forcePreview) start(false);
+        } else {
+          // 只保留可见卡片的定格图，滚动浏览再多频道也不会累积历史位图。
+          stop(false);
+        }
       }
     }, { threshold: 0.35 });
     observer.observe(cardRef.current);
-    return () => { observer.disconnect(); stop(); };
+    return () => { observer.disconnect(); stop(false); };
   }, [forcePreview, mode, start, stop]);
 
   const tag = phase === "playing" ? "预览中"
@@ -160,7 +175,7 @@ export function OnlineHostCard({ host, mode, forcePreview, onOpen }: {
       <span className="op-cover">
         {host.cover ? <img src={host.cover} alt="" loading="lazy" referrerPolicy="no-referrer"
           onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} /> : null}
-        <canvas ref={canvasRef} className={cx("op-preview-frame", hasFrame && "op-preview-frame-on")} aria-hidden="true" />
+        <canvas ref={canvasRef} width={0} height={0} className={cx("op-preview-frame", hasFrame && "op-preview-frame-on")} aria-hidden="true" />
         <video ref={videoRef} className={cx("op-preview-video", phase === "playing" && "op-preview-video-on")} muted playsInline aria-hidden="true" />
         <span className="op-play-badge"><Play size={26} aria-hidden="true" /></span>
         <span className={cx("op-preview-tag", phase === "idle" && !hasFrame && "op-preview-tag-idle")}>{tag}</span>

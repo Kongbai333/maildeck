@@ -16,7 +16,8 @@ const previews = new Map<symbol, Preview>();
 
 export function previewLimits(): { max: number; perHost: number } {
   const proxy = getRuntimeStreamMode() === "proxy";
-  return { max: Math.max(0, Math.min(proxy ? 9 : 4, (proxy ? 12 : 6) - playerCount)), perHost: proxy ? 99 : 1 };
+  // HTTP/2 能增加连接数，但不能降低浏览器的解码内存；预览统一小批量运行。
+  return { max: Math.max(0, Math.min(2, 6 - playerCount)), perHost: proxy ? 2 : 1 };
 }
 export function setPreviewPlayerCount(count: number): void {
   playerCount = count;
